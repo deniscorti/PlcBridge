@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UserSecretsId>plcbridge-host</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.9.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.9.0-beta.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PlcBridge.Core\PlcBridge.Core.csproj" />
+    <ProjectReference Include="..\PlcBridge.Plc\PlcBridge.Plc.csproj" />
+    <ProjectReference Include="..\PlcBridge.Contracts\PlcBridge.Contracts.csproj" />
+  </ItemGroup>
+</Project>

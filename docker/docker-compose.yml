@@ -1,0 +1,12 @@
+services:
+  plcbridge:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: plcbridge:dev
+    ports:
+      - "5080:5080"
+    environment:
+      - ASPNETCORE_URLS=http://+:5080
+      - PLCBRIDGE__Auth__ApiKey=change-me
+    restart: unless-stopped

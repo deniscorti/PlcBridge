@@ -1,0 +1,38 @@
+## .NET
+bin/
+obj/
+out/
+*.user
+*.suo
+*.userprefs
+*.swp
+.vs/
+.vscode/
+.idea/
+*.DotSettings.user
+
+## Build
+artifacts/
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+## Rider / ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+
+## OS
+Thumbs.db
+.DS_Store
+
+## Secrets / local config
+appsettings.Local.json
+appsettings.Development.json
+*.env
+.env.*
+secrets.json
+
+## Logs
+logs/
+*.log

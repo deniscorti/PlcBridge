@@ -6,7 +6,10 @@ Servizio bridge per PLC industriali che espone i dati tramite **HTTP REST API** 
 - Servizio Windows / Linux daemon (hostable come Worker Service .NET)
 - API HTTP per lettura/scrittura tag e configurazione
 - WebSocket per sottoscrizioni e push di eventi dal PLC
-- Driver PLC pluggable (Siemens S7, Modbus TCP, OPC UA, ...)
+- Driver PLC pluggable (ADS/Beckhoff, UDP streaming, estensibile)
+- Gestione differenziata per tipo di dato: **telemetria** (valori continui), **eventi** (cambi di stato), **allarmi**
+- Buffer in memoria configurabile (ultimi X minuti) per accesso rapido ai dati recenti
+- Persistenza su disco per ricostruzione storica
 - Configurazione tramite `appsettings.json` + environment variables
 - Logging strutturato (Serilog) e metriche (OpenTelemetry)
 

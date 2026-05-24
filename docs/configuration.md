@@ -13,16 +13,32 @@ La configurazione è caricata da:
     "Http": { "Port": 5080 },
     "WebSocket": { "Path": "/ws", "MaxConnections": 2000 },
     "Auth": { "ApiKey": "change-me" },
+    "Buffer": {
+      "InMemoryMinutes": 10,
+      "PersistToDisk": true,
+      "DiskPath": "./data"
+    },
     "Plcs": [
       {
         "Id": "plc1",
-        "Driver": "S7",
+        "Driver": "Ads",
         "Host": "192.168.0.10",
-        "Rack": 0,
-        "Slot": 1,
+        "AmsNetId": "5.23.40.1.1.1",
+        "Port": 851,
         "Tags": [
-          { "Name": "temperature", "Address": "DB10.DBD0", "Type": "Real", "PollMs": 500 },
-          { "Name": "setpoint",    "Address": "DB10.DBD4", "Type": "Real", "PollMs": 1000 }
+          { "Name": "temperature", "Address": "MAIN.fTemperature", "DataKind": "Telemetry", "PollMs": 500 },
+          { "Name": "setpoint",    "Address": "MAIN.fSetpoint",    "DataKind": "Telemetry", "PollMs": 1000 },
+          { "Name": "startButton", "Address": "MAIN.bStart",       "DataKind": "Event" },
+          { "Name": "overtemp",    "Address": "MAIN.bOverTemp",    "DataKind": "Alarm" }
+        ]
+      },
+      {
+        "Id": "plc2",
+        "Driver": "Udp",
+        "ListenPort": 9100,
+        "Protocol": "custom-v1",
+        "Tags": [
+          { "Name": "vibration", "Offset": 0, "Length": 12, "DataKind": "Telemetry" }
         ]
       }
     ]

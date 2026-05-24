@@ -38,6 +38,32 @@ PlcBridge.Contracts: DTO condivisi tra Host e client (HTTP/WS)
 3. `SubscriptionBroker` registra la sessione.
 4. Su variazione tag, broker pubblica messaggio `{ "type":"value", ... }`.
 
+## Tipologie di dati
+
+Il sistema gestisce tre categorie distinte di dati provenienti dal PLC:
+
+| Tipo | Descrizione | Strategia |
+|------|-------------|-----------|
+| **Telemetria** | Valori numerici campionati (sensori, misure). Possono arrivare come singolo valore o array. | Polling/push continuo, buffer circolare in memoria, persistenza su disco. |
+| **Eventi** | Cambi di stato discreti (bottone premuto, fine ciclo). Non ha senso trasmettere continuamente 0/1. | Notifica solo on-change, salvataggio con timestamp. |
+| **Allarmi** | Simili a eventi ma legati a condizioni anomale o campi specifici del PLC. | Notifica immediata, log dedicato, separazione dallo stream telemetria. |
+
+I dati vengono mantenuti separati sia nel buffer in memoria che nella persistenza su disco.
+
+## Buffer in memoria e persistenza
+
+- **Ring buffer in-memory**: mantiene gli ultimi N minuti (configurabile) per ogni categoria. Consente query rapide su dati recenti via REST/WS (es. `historyData`).
+- **Persistenza su disco**: i dati vengono scritti periodicamente su file (o DB locale) per consentire ricostruzione storica in caso di riavvio o necessità di analisi post-mortem.
+
+## Driver supportati
+
+| Driver | Protocollo | Note |
+|--------|-----------|------|
+| **ADS (Beckhoff)** | ADS/AMS TCP | Lettura/scrittura variabili, notifiche on-change native. |
+| **UDP Receiver** | UDP custom | Il PLC invia pacchetti UDP con stato/valori dei segnali secondo un protocollo da definire. PlcBridge ascolta e decodifica lo stream. |
+
+L'architettura è estensibile: ogni driver implementa `IPlcDriver`.
+
 ## Componenti cross-cutting
 - **Configuration**: `appsettings.json` + env vars + `IOptionsMonitor`.
 - **Logging**: Serilog (console + file JSON).

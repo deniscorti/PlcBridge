@@ -7,7 +7,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
-    <Company>PlcBridge</Company>
+    <Company>Bridge</Company>
     <Authors>deniscorti</Authors>
   </PropertyGroup>
 </Project>

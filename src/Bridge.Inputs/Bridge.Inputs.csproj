@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Bridge.Inputs</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Exclude template files from compilation — they are reference/documentation only -->
+    <Compile Remove="_Template\**" />
+    <None Include="_Template\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Bridge.Core\Bridge.Core.csproj" />
+  </ItemGroup>
+</Project>

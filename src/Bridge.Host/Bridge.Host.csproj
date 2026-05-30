@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Bridge.Host</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Serilog.AspNetCore" Version="8.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Bridge.Core\Bridge.Core.csproj" />
+    <ProjectReference Include="..\Bridge.Inputs\Bridge.Inputs.csproj" />
+    <ProjectReference Include="..\Bridge.Contracts\Bridge.Contracts.csproj" />
+    <ProjectReference Include="..\Bridge.Storage\Bridge.Storage.csproj" />
+    <ProjectReference Include="..\Bridge.InterBridge\Bridge.InterBridge.csproj" />
+  </ItemGroup>
+</Project>

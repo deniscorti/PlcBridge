@@ -7,736 +7,568 @@
 <script src="https://unpkg.com/uplot@1.6.30/dist/uPlot.iife.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/uplot@1.6.30/dist/uPlot.min.css">
 <style>
-  :root { --bg: #1a1a2e; --card: #16213e; --accent: #0f3460; --green: #4ecca3; --red: #e74c3c; --yellow: #f39c12; --text: #eee; --muted: #999; }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 16px; }
-  h1 { font-size: 1.4rem; margin-bottom: 12px; }
-  h2 { font-size: 1rem; color: var(--green); margin-bottom: 8px; }
-  button { background: var(--accent); color: var(--text); border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
-  button:hover { background: var(--green); color: var(--bg); }
-  button.primary { background: var(--green); color: var(--bg); font-weight: 600; }
-  input, select { background: var(--card); border: 1px solid var(--accent); color: var(--text); padding: 4px 8px; border-radius: 4px; }
-  label.chk { font-size: 0.8rem; color: var(--muted); display: flex; align-items: center; gap: 4px; }
-  .status { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
-  .status.ok { background: var(--green); } .status.err { background: var(--red); } .status.off { background: var(--muted); }
+:root{--bg:#1a1a2e;--card:#16213e;--accent:#0f3460;--green:#4ecca3;--red:#e74c3c;--yellow:#f39c12;--text:#eee;--muted:#999;--cyan:#5dade2}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);padding:0}
+h1{font-size:1.3rem;padding:10px 16px 0}
+h2{font-size:.92rem;color:var(--green);margin-bottom:4px}
+h3{font-size:.82rem;color:var(--yellow);margin-bottom:4px}
+button{background:var(--accent);color:var(--text);border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:.78rem}
+button:hover{background:var(--green);color:var(--bg)}
+button.primary{background:var(--green);color:var(--bg);font-weight:600}
+input,select{background:var(--card);border:1px solid var(--accent);color:var(--text);padding:3px 6px;border-radius:4px;font-size:.78rem}
+label.chk{font-size:.76rem;color:var(--muted);display:flex;align-items:center;gap:3px}
+.status{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px}
+.status.ok{background:var(--green)}.status.err{background:var(--red)}.status.off{background:var(--muted)}
+.row{display:flex;gap:5px;align-items:center;margin-bottom:5px;flex-wrap:wrap}
+.lbl{color:var(--muted);font-size:.76rem}
+.info{color:var(--muted);font-size:.76rem}
+.panel{background:var(--card);border-radius:8px;padding:10px;margin:6px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;margin:6px 0}
+.card{background:var(--card);border-radius:8px;padding:8px}
+.tag-row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid #ffffff10;font-size:.8rem}
+.tag-name{color:var(--muted)}.tag-value{font-family:'Cascadia Code',monospace}
+.tag-value.telemetry{color:var(--green)}.tag-value.event{color:var(--yellow)}.tag-value.alarm{color:var(--red)}
 
-  .top-bar, .actions, .write-panel { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-  .top-bar input { width: 280px; }
-  .write-panel input { width: 140px; }
+/* Tabs */
+.tab-bar{display:flex;gap:0;background:#0d1526;padding:6px 16px 0;border-bottom:2px solid var(--accent)}
+.tab-btn{padding:7px 18px;border:none;background:transparent;color:var(--muted);font-size:.88rem;cursor:pointer;border-radius:6px 6px 0 0;font-weight:500}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{background:var(--card);color:var(--green);border-bottom:2px solid var(--green);margin-bottom:-2px}
+.tab-content{display:none;padding:10px 16px}
+.tab-content.active{display:block}
 
-  /* ── Channel panel ── */
-  .panel { background: var(--card); border-radius: 8px; padding: 14px; margin: 10px 0; }
-  .channel-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
-  .channel-actions .info { color: var(--muted); font-size: 0.8rem; margin-left: 8px; }
-  .source-group { margin-bottom: 8px; }
-  .source-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; cursor: pointer; user-select: none; }
-  .source-hdr input { accent-color: var(--green); width: 16px; height: 16px; }
-  .source-hdr label { font-weight: 600; font-size: 0.95rem; cursor: pointer; }
-  .source-hdr .cnt { color: var(--muted); font-size: 0.8rem; }
-  .tag-list { display: flex; flex-wrap: wrap; gap: 2px 10px; padding-left: 24px; }
-  .tag-item { display: flex; align-items: center; gap: 3px; font-size: 0.82rem; }
-  .tag-item input { accent-color: var(--green); }
-  .tag-item .chart-chk { accent-color: var(--yellow); }
-  .kind-badge { font-size: 0.65rem; padding: 1px 4px; border-radius: 3px; }
-  .kind-badge.telemetry { background: #0f3460; color: var(--green); }
-  .kind-badge.event { background: #3d2e00; color: var(--yellow); }
-  .kind-badge.alarm { background: #3d0a0a; color: var(--red); }
+/* Collapsible */
+.coll-btn{cursor:pointer;color:var(--green);font-size:.8rem;background:none;border:1px solid var(--accent);padding:3px 10px;border-radius:4px}
+.coll-btn:hover{border-color:var(--green);background:transparent;color:var(--green)}
 
-  /* ── Chart ── */
-  #chart-section { display: none; }
-  #chart-section.visible { display: block; }
-  .chart-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
-  .chart-toolbar select, .chart-toolbar input { font-size: 0.8rem; }
-  #chart-container { background: var(--card); border-radius: 8px; padding: 8px; min-height: 300px; }
-  #chart-container .uplot { width: 100% !important; }
-  .u-legend { font-size: 0.75rem !important; }
+/* Channel selector */
+.tag-list{display:flex;flex-wrap:wrap;gap:1px 7px;padding-left:18px;max-height:120px;overflow-y:auto}
+.tag-item{display:flex;align-items:center;gap:2px;font-size:.76rem}
+.tag-item input{accent-color:var(--green)}
+.kind-badge{font-size:.58rem;padding:1px 3px;border-radius:2px}
+.kind-badge.telemetry{background:#0f3460;color:var(--green)}
+.kind-badge.event{background:#3d2e00;color:var(--yellow)}
+.kind-badge.alarm{background:#3d0a0a;color:var(--red)}
+.source-hdr{display:flex;align-items:center;gap:5px;margin-bottom:2px;cursor:pointer;user-select:none}
+.source-hdr input{accent-color:var(--green);width:13px;height:13px}
+.source-hdr label{font-weight:600;font-size:.85rem;cursor:pointer}
+.source-hdr .cnt{color:var(--muted);font-size:.72rem}
 
-  /* ── Logs ── */
-  .log-container { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
-  @media (max-width: 800px) { .log-container { grid-template-columns: 1fr; } }
-  .log-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-  .log-hdr button { font-size: 0.7rem; padding: 2px 8px; }
-  .log-box { background: var(--card); border-radius: 8px; padding: 10px; max-height: 300px; overflow-y: auto; font-family: 'Cascadia Code', monospace; font-size: 0.75rem; line-height: 1.6; }
-  .log-line { color: var(--muted); white-space: pre-wrap; word-break: break-all; }
-  .log-line.error { color: var(--red); } .log-line.push { color: var(--green); } .log-line.sent { color: #5dade2; }
-  .resp-entry { border-bottom: 1px solid #ffffff08; padding: 2px 0; }
-  .resp-id { color: #5dade2; font-weight: 600; }
-  .resp-status { padding: 1px 6px; border-radius: 3px; font-size: 0.65rem; font-weight: 600; }
-  .resp-status.ok { background: #0a3d2a; color: var(--green); }
-  .resp-status.fail { background: #3d0a0a; color: var(--red); }
-  .resp-status.pending { background: #3d2e00; color: var(--yellow); }
-  .resp-detail { color: var(--muted); font-size: 0.7rem; }
+/* Chart */
+.chart-box{background:var(--card);border-radius:8px;padding:6px;min-height:280px}
+.u-legend{font-size:.68rem!important}
 
-  /* ── Live values grid ── */
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-bottom: 16px; }
-  .card { background: var(--card); border-radius: 8px; padding: 14px; }
-  .tag-row { display: flex; justify-content: space-between; padding: 3px 0; border-bottom: 1px solid #ffffff10; font-size: 0.85rem; }
-  .tag-name { color: var(--muted); }
-  .tag-value { font-family: 'Cascadia Code', monospace; }
-  .tag-value.telemetry { color: var(--green); }
-  .tag-value.event { color: var(--yellow); }
-  .tag-value.alarm { color: var(--red); }
+/* Logs */
+.log-split{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px}
+@media(max-width:800px){.log-split{grid-template-columns:1fr}}
+.log-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.log-hdr button{font-size:.66rem;padding:2px 5px}
+.log-box{background:var(--card);border-radius:8px;padding:6px;max-height:220px;overflow-y:auto;font-family:'Cascadia Code',monospace;font-size:.7rem;line-height:1.5}
+.log-line{color:var(--muted);white-space:pre-wrap;word-break:break-all}
+.log-line.error{color:var(--red)}.log-line.push{color:var(--green)}.log-line.sent{color:var(--cyan)}
+.resp-entry{border-bottom:1px solid #ffffff08;padding:2px 0}
+.resp-id{color:var(--cyan);font-weight:600;font-size:.68rem}
+.resp-status{padding:1px 4px;border-radius:3px;font-size:.58rem;font-weight:600}
+.resp-status.ok{background:#0a3d2a;color:var(--green)}
+.resp-status.fail{background:#3d0a0a;color:var(--red)}
+.resp-status.pending{background:#3d2e00;color:var(--yellow)}
+.resp-detail{color:var(--muted);font-size:.66rem}
+
+/* Command area */
+.cmd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px}
+.cmd-card{background:var(--card);border-radius:8px;padding:8px}
+.cmd-card input{width:80px}.cmd-card select{max-width:120px}
+.cmd-sep{border-top:1px solid #ffffff10;margin:4px 0}
+.cmd-help{font-size:.68rem;color:var(--muted);line-height:1.4;margin-top:4px}
+.cmd-help code{color:var(--cyan);font-size:.68rem}
+
+/* Archives */
+.arch-table{width:100%;border-collapse:collapse;font-size:.76rem;margin-top:4px}
+.arch-table th{text-align:left;color:var(--green);padding:3px 5px;border-bottom:1px solid var(--accent)}
+.arch-table td{padding:2px 5px;border-bottom:1px solid #ffffff08;color:var(--muted)}
+.arch-table tr:hover td{color:var(--text)}
 </style>
 </head>
 <body>
 
 <h1>Bridge — Test Client</h1>
 
-<!-- Connection -->
-<div class="top-bar">
-  <span class="status off" id="ws-status"></span>
-  <span id="ws-label">Disconnected</span>
-  <input id="bridge-url" placeholder="Bridge URL (e.g. http://localhost:5080)">
-  <button onclick="connectWs()">Connect WS</button>
-  <button onclick="disconnectWs()">Disconnect</button>
-  <button onclick="loadSources()">Load Sources (REST)</button>
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('dp')">DataProvider</button>
+  <button class="tab-btn" onclick="switchTab('ds')">DataService</button>
+  <button class="tab-btn" onclick="switchTab('dv')">DataServer</button>
 </div>
 
-<!-- Quick actions -->
-<div class="actions">
-  <button onclick="sendSubscribeAll()">Subscribe ALL</button>
-  <button onclick="sendUnsubscribeAll()">Unsubscribe ALL</button>
-  <button onclick="sendPing()">Ping</button>
-  <button onclick="sendGetSources()">getSources</button>
-  <button onclick="sendGetStatus()">getStatus</button>
-</div>
-
-<!-- Write/Read -->
-<div class="write-panel">
-  <select id="write-source"></select>
-  <input id="write-tag" placeholder="Tag name">
-  <input id="write-value" placeholder="Value">
-  <button onclick="sendWrite()">Write</button>
-  <button onclick="sendRead()">Read</button>
-</div>
-
-<!-- Channel selector -->
-<div class="panel" id="channel-panel" style="display:none">
-  <h2>Channel Selector</h2>
-  <div class="channel-actions">
-    <button onclick="selAll(true)">Select All</button>
-    <button onclick="selAll(false)">Deselect All</button>
-    <label class="chk"><input type="checkbox" id="compact-mode"> Compact</label>
-    <label class="chk"><input type="checkbox" id="chart-all-chk" onchange="toggleChartAll(this.checked)"> Chart all selected</label>
-    <button class="primary" onclick="subscribeSelected()">Subscribe Selected</button>
-    <button onclick="unsubscribeSelected()">Unsubscribe Selected</button>
-    <span class="info" id="sel-count">0 tags (0 groups)</span>
-    <span class="info" id="layout-info"></span>
+<!-- ════════════════════════════ DataProvider ════════════════════════════ -->
+<div class="tab-content active" id="tab-dp">
+  <div class="row">
+    <span class="status off" id="dp-ws-status"></span><span id="dp-ws-label">Disconnected</span>
+    <input id="dp-url" value="http://localhost:5080" style="width:220px">
+    <button onclick="B.dp.connect()">Connect</button>
+    <button onclick="B.dp.disconnect()">Disconnect</button>
+    <button onclick="B.dp.restSources()">Load Sources</button>
+    <button onclick="B.dp.wsOp('getSources')">getSources (WS)</button>
+    <button onclick="B.dp.wsSend({op:'ping'})">Ping</button>
   </div>
-  <div id="channel-groups"></div>
-</div>
 
-<!-- Chart section -->
-<div id="chart-section">
-  <h2>Chart</h2>
-  <div class="chart-toolbar">
-    <label class="chk">Range:
-      <select id="chart-range" onchange="onChartRangeChange()">
-        <option value="60">Last 1 min</option>
-        <option value="300" selected>Last 5 min</option>
-        <option value="900">Last 15 min</option>
-        <option value="1800">Last 30 min</option>
-        <option value="3600">Last 1 hour</option>
-      </select>
-    </label>
-    <button onclick="loadHistory()">Load History (REST)</button>
-    <button onclick="resetZoom()">Reset Zoom</button>
-    <label class="chk"><input type="checkbox" id="chart-follow" checked> Auto-follow</label>
-    <span class="info" id="chart-info"></span>
-  </div>
-  <div id="chart-container"></div>
-</div>
-
-<!-- Live values -->
-<div class="grid" id="sources-grid"></div>
-
-<!-- Logs -->
-<div class="log-container">
-  <div>
-    <div class="log-hdr">
-      <h2>Message Log</h2>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <label class="chk"><input type="checkbox" id="raw-mode" onchange="rawMode=this.checked"> Raw JSON</label>
-        <button onclick="clearLog('log')">Clear</button>
+  <!-- Commands (collapsible, top) -->
+  <div class="row"><button class="coll-btn" onclick="tog('dp-cmd')">Commands</button></div>
+  <div id="dp-cmd" style="display:none">
+    <div class="cmd-grid">
+      <div class="cmd-card">
+        <h3>REST Status</h3>
+        <div class="row"><button onclick="B.dp.rest('/health')">Health</button><button onclick="B.dp.rest('/api/status')">Status</button><button onclick="B.dp.rest('/api/metrics')">Metrics</button></div>
+        <div class="row"><span class="lbl">Source:</span><select id="dp-cmd-src"></select></div>
+        <div class="row"><button onclick="B.dp.restSrcCmd('/tags')">Tags</button></div>
+      </div>
+      <div class="cmd-card">
+        <h3>Read / Write</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="dp-rw-src"></select></div>
+        <div class="row"><input id="dp-tag" placeholder="Tag name" style="width:120px"><input id="dp-val" placeholder="Value" style="width:80px"><button onclick="B.dp.sendRead()">Read</button><button onclick="B.dp.sendWrite()">Write</button></div>
+      </div>
+      <div class="cmd-card">
+        <h3>Source Command</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="dp-sc-src"></select></div>
+        <div class="row"><input id="dp-sc-cmd" placeholder="command" style="width:120px"><input id="dp-sc-params" placeholder='{"k":"v"}' style="width:120px"><button onclick="B.dp.sourceCmd()">Send</button></div>
+        <div class="cmd-help">Available commands depend on the upstream driver. For ADS: <code>readSymbol</code>, <code>writeSymbol</code>. Params as JSON.<br>Example: cmd=<code>readSymbol</code> params=<code>{"address":"MAIN.fTemp"}</code></div>
+      </div>
+      <div class="cmd-card">
+        <h3>Alarms</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="dp-ack-src"></select></div>
+        <div class="row"><input id="dp-ack-tag" placeholder="tag or ALL" style="width:120px"><button onclick="B.dp.ackAlarm()">Ack</button><button onclick="B.dp.ackAll()">Ack ALL</button></div>
       </div>
     </div>
-    <div class="log-box" id="log"></div>
   </div>
-  <div>
-    <div class="log-hdr">
-      <h2>Responses</h2>
-      <button onclick="clearLog('resp-log')">Clear</button>
+
+  <!-- Channels -->
+  <div id="dp-ch-section" style="display:none">
+    <div class="row">
+      <button class="coll-btn" onclick="tog('dp-ch-panel')">Channels</button>
+      <button onclick="B.dp.selAll(true)">Select All</button>
+      <button onclick="B.dp.selAll(false)">Deselect All</button>
+      <button class="primary" onclick="B.dp.subscribe()">Subscribe</button>
+      <button onclick="B.dp.unsubscribe()">Unsubscribe</button>
+      <span class="info" id="dp-sel-count"></span>
     </div>
-    <div class="log-box" id="resp-log"></div>
+    <div id="dp-ch-panel" style="display:none"><div id="dp-ch-groups"></div></div>
+  </div>
+  <div class="grid" id="dp-live-grid"></div>
+
+  <!-- Log -->
+  <div class="log-split">
+    <div><div class="log-hdr"><h2>Log</h2><div class="row"><label class="chk"><input type="checkbox" onchange="B.dp.raw=this.checked">Raw</label><button onclick="clr('dp-log')">Clear</button></div></div><div class="log-box" id="dp-log"></div></div>
+    <div><div class="log-hdr"><h2>Responses</h2><button onclick="clr('dp-resp')">Clear</button></div><div class="log-box" id="dp-resp"></div></div>
   </div>
 </div>
 
+<!-- ════════════════════════════ DataService ════════════════════════════ -->
+<div class="tab-content" id="tab-ds">
+  <div class="row">
+    <span class="status off" id="ds-ws-status"></span><span id="ds-ws-label">Disconnected</span>
+    <input id="ds-url" value="http://localhost:5080" style="width:220px">
+    <button onclick="B.ds.connect()">Connect</button>
+    <button onclick="B.ds.disconnect()">Disconnect</button>
+    <button onclick="B.ds.restSources()">Load Sources</button>
+    <button onclick="B.ds.wsOp('getSources')">getSources (WS)</button>
+    <button onclick="B.ds.wsSend({op:'ping'})">Ping</button>
+  </div>
+
+  <!-- Commands (collapsible, top) -->
+  <div class="row"><button class="coll-btn" onclick="tog('ds-cmd')">Commands</button></div>
+  <div id="ds-cmd" style="display:none">
+    <div class="cmd-grid">
+      <div class="cmd-card">
+        <h3>REST Status</h3>
+        <div class="row"><button onclick="B.ds.rest('/health')">Health</button><button onclick="B.ds.rest('/api/status')">Status</button><button onclick="B.ds.rest('/api/metrics')">Metrics</button><button onclick="B.ds.rest('/api/bridge/settings')">Settings</button></div>
+        <div class="row"><span class="lbl">Source:</span><select id="ds-cmd-src"></select></div>
+        <div class="row"><button onclick="B.ds.restSrcCmd('/tags')">Tags</button><button onclick="B.ds.restSrcCmd('/chunks')">Chunks</button><button onclick="B.ds.restSrcCmd('/telemetry?limit=20')">Telemetry (20)</button></div>
+      </div>
+      <div class="cmd-card">
+        <h3>Bridge Commands</h3>
+        <div class="row"><button onclick="B.ds.bridgeCmd('getSettings')">getSettings</button><button onclick="B.ds.wsOp('getStatus')">getStatus</button></div>
+        <div class="cmd-sep"></div>
+        <div class="row"><span class="lbl">Chunk:</span><input type="number" id="ds-chunk-min" value="5" min="1" max="60" style="width:50px"><span class="lbl">min</span><button onclick="B.ds.setChunkDur()">setChunkDuration</button></div>
+      </div>
+      <div class="cmd-card">
+        <h3>Read / Write</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="ds-rw-src"></select></div>
+        <div class="row"><input id="ds-tag" placeholder="Tag name" style="width:120px"><input id="ds-val" placeholder="Value" style="width:80px"><button onclick="B.ds.sendRead()">Read</button><button onclick="B.ds.sendWrite()">Write</button></div>
+      </div>
+      <div class="cmd-card">
+        <h3>Query History (WS)</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="ds-q-src"></select></div>
+        <div class="row"><span class="lbl">Tags:</span><input id="ds-q-tags" placeholder="Canale1,Canale2" style="width:160px"><span class="info">(empty = all tags)</span></div>
+        <div class="row"><span class="lbl">Range:</span><select id="ds-q-range"><option value="60">1 min</option><option value="300" selected>5 min</option><option value="900">15 min</option><option value="3600">1 hour</option></select></div>
+        <div class="row"><span class="lbl">Limit:</span><input type="number" id="ds-q-limit" value="5000" style="width:65px"><span class="info">(max records total, shared across all tags)</span></div>
+        <div class="row"><button onclick="B.ds.query('queryTelemetry')">Telemetry</button><button onclick="B.ds.query('queryEvents')">Events</button><button onclick="B.ds.query('queryAlarms')">Alarms</button></div>
+        <div class="cmd-help">Queries buffered history. Returns up to <code>limit</code> records total split across all matching tags. With many tags, increase limit or specify tags to get meaningful results.</div>
+      </div>
+      <div class="cmd-card">
+        <h3>Export CSV (REST)</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="ds-exp-src"></select></div>
+        <div class="row"><select id="ds-exp-range"><option value="300">5m</option><option value="900">15m</option><option value="3600" selected>1h</option></select></div>
+        <div class="row"><button onclick="B.ds.exportCsv('telemetry')">Telemetry</button><button onclick="B.ds.exportCsv('event')">Events</button><button onclick="B.ds.exportCsv('alarm')">Alarms</button></div>
+      </div>
+      <div class="cmd-card">
+        <h3>Source Command</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="ds-sc-src"></select></div>
+        <div class="row"><input id="ds-sc-cmd" placeholder="command" style="width:120px"><input id="ds-sc-params" placeholder='{"k":"v"}' style="width:120px"><button onclick="B.ds.sourceCmd()">Send</button></div>
+        <div class="cmd-help">Forwarded upstream to the DataProvider's driver.<br>Commands: depends on driver (ADS: <code>readSymbol</code>, <code>writeSymbol</code>).<br>Example: <code>readSymbol</code> + <code>{"address":"MAIN.fTemp"}</code></div>
+      </div>
+      <div class="cmd-card">
+        <h3>Alarms</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="ds-ack-src"></select></div>
+        <div class="row"><input id="ds-ack-tag" placeholder="tag or ALL" style="width:120px"><button onclick="B.ds.ackAlarm()">Ack</button><button onclick="B.ds.ackAll()">Ack ALL</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Channels -->
+  <div id="ds-ch-section" style="display:none">
+    <div class="row">
+      <button class="coll-btn" onclick="tog('ds-ch-panel')">Channels</button>
+      <button onclick="B.ds.selAll(true)">Select All</button>
+      <button onclick="B.ds.selAll(false)">Deselect All</button>
+      <label class="chk"><input type="checkbox" id="ds-compact">Compact</label>
+      <label class="chk"><input type="checkbox" id="ds-chart" checked>Chart</label>
+      <button class="primary" onclick="B.ds.subscribe()">Subscribe</button>
+      <button onclick="B.ds.unsubscribe()">Unsubscribe</button>
+      <span class="info" id="ds-sel-count"></span>
+      <span class="info" id="ds-layout-info"></span>
+    </div>
+    <div id="ds-ch-panel" style="display:none"><div id="ds-ch-groups"></div></div>
+  </div>
+
+  <!-- Chart -->
+  <div id="ds-chart-section" style="display:none">
+    <div class="row"><h2>Chart</h2>
+      <select id="ds-chart-range" onchange="B.ds.chartRangeChange()"><option value="60">1m</option><option value="300" selected>5m</option><option value="900">15m</option><option value="3600">1h</option></select>
+      <button onclick="B.ds.loadHistory()">Load History</button><button onclick="B.ds.resetZoom()">Reset</button>
+      <label class="chk"><input type="checkbox" id="ds-chart-follow" checked>Follow</label>
+      <span class="info" id="ds-chart-info"></span>
+    </div>
+    <div class="chart-box" id="chart-container-ds"></div>
+  </div>
+
+  <div class="grid" id="ds-live-grid"></div>
+
+  <div class="log-split">
+    <div><div class="log-hdr"><h2>Log</h2><div class="row"><label class="chk"><input type="checkbox" onchange="B.ds.raw=this.checked">Raw</label><button onclick="clr('ds-log')">Clear</button></div></div><div class="log-box" id="ds-log"></div></div>
+    <div><div class="log-hdr"><h2>Responses</h2><button onclick="clr('ds-resp')">Clear</button></div><div class="log-box" id="ds-resp"></div></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════ DataServer ════════════════════════════ -->
+<div class="tab-content" id="tab-dv">
+  <div class="row">
+    <span class="status off" id="dv-ws-status"></span><span id="dv-ws-label">Disconnected</span>
+    <input id="dv-url" value="http://localhost:5082" style="width:220px">
+    <button onclick="B.dv.connect()">Connect</button>
+    <button onclick="B.dv.disconnect()">Disconnect</button>
+    <button onclick="B.dv.restSources()">Load Sources</button>
+    <button onclick="B.dv.wsOp('getSources')">getSources (WS)</button>
+    <button onclick="B.dv.wsSend({op:'ping'})">Ping</button>
+  </div>
+
+  <!-- Commands (collapsible, top) -->
+  <div class="row"><button class="coll-btn" onclick="tog('dv-cmd')">Commands</button></div>
+  <div id="dv-cmd" style="display:none">
+    <div class="cmd-grid">
+      <div class="cmd-card">
+        <h3>REST Status</h3>
+        <div class="row"><button onclick="B.dv.rest('/health')">Health</button><button onclick="B.dv.rest('/api/status')">Status</button><button onclick="B.dv.rest('/api/metrics')">Metrics</button><button onclick="B.dv.rest('/api/bridge/settings')">Settings</button></div>
+        <div class="row"><span class="lbl">Source:</span><select id="dv-cmd-src"></select></div>
+        <div class="row"><button onclick="B.dv.restSrcCmd('/tags')">Tags</button><button onclick="B.dv.restSrcCmd('/chunks')">Chunks</button><button onclick="B.dv.restSrcCmd('/telemetry?limit=20')">Telemetry (20)</button></div>
+      </div>
+      <div class="cmd-card">
+        <h3>Bridge Commands</h3>
+        <div class="row"><button onclick="B.dv.bridgeCmd('getSettings')">getSettings</button><button onclick="B.dv.wsOp('getStatus')">getStatus</button></div>
+        <div class="cmd-sep"></div>
+        <div class="row"><span class="lbl">Chunk:</span><input type="number" id="dv-chunk-min" value="5" min="1" max="60" style="width:50px"><span class="lbl">min</span><button onclick="B.dv.setChunkDur()">setChunkDuration</button></div>
+      </div>
+      <div class="cmd-card">
+        <h3>Query History (WS)</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="dv-q-src"></select></div>
+        <div class="row"><span class="lbl">Tags:</span><input id="dv-q-tags" placeholder="Canale1,Canale2" style="width:160px"><span class="info">(empty = all tags)</span></div>
+        <div class="row"><span class="lbl">Range:</span><select id="dv-q-range"><option value="60">1 min</option><option value="300" selected>5 min</option><option value="900">15 min</option><option value="3600">1 hour</option></select></div>
+        <div class="row"><span class="lbl">Limit:</span><input type="number" id="dv-q-limit" value="5000" style="width:65px"><span class="info">(max records total, shared across all tags)</span></div>
+        <div class="row"><button onclick="B.dv.query('queryTelemetry')">Telemetry</button><button onclick="B.dv.query('queryEvents')">Events</button><button onclick="B.dv.query('queryAlarms')">Alarms</button></div>
+        <div class="cmd-help">Queries buffered history. Response includes <code>quality</code>: "full" (from chunk transfer), "live" (downsample), "mixed", or "loaded" (Parquet import). Increase limit for more data.</div>
+      </div>
+      <div class="cmd-card">
+        <h3>Archives (Parquet)</h3>
+        <div class="row"><button onclick="B.dv.listArchives()">List Archives</button></div>
+        <div class="row"><span class="lbl">File:</span><input id="dv-arch-file" placeholder="path/to/file.parquet" style="width:200px"><button onclick="B.dv.loadArchiveFromInput()">Load</button></div>
+        <div id="dv-archives"></div>
+        <div class="cmd-help">Load a Parquet file produced by a DataService into the buffer as <code>Loaded</code> chunks. Use "List Archives" to see available files on the server.</div>
+      </div>
+      <div class="cmd-card">
+        <h3>Export CSV (REST)</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="dv-exp-src"></select></div>
+        <div class="row"><select id="dv-exp-range"><option value="300">5m</option><option value="900">15m</option><option value="3600" selected>1h</option></select></div>
+        <div class="row"><button onclick="B.dv.exportCsv('telemetry')">Telemetry</button><button onclick="B.dv.exportCsv('event')">Events</button><button onclick="B.dv.exportCsv('alarm')">Alarms</button></div>
+      </div>
+      <div class="cmd-card">
+        <h3>Source Command</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="dv-sc-src"></select></div>
+        <div class="row"><input id="dv-sc-cmd" placeholder="command" style="width:120px"><input id="dv-sc-params" placeholder='{"k":"v"}' style="width:120px"><button onclick="B.dv.sourceCmd()">Send</button></div>
+        <div class="cmd-help">Forwarded upstream through the chain: DataServer &rarr; DataService &rarr; DataProvider &rarr; driver.<br>Commands: <code>enableUdpStream</code>, <code>disableUdpStream</code>, <code>enableUdpReceive</code>, <code>disableUdpReceive</code>.<br>Example: <code>enableUdpStream</code> + <code>{"source":"linea1","destinationId":"server-main"}</code></div>
+      </div>
+      <div class="cmd-card">
+        <h3>Alarms</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="dv-ack-src"></select></div>
+        <div class="row"><input id="dv-ack-tag" placeholder="tag or ALL" style="width:120px"><button onclick="B.dv.ackAlarm()">Ack</button><button onclick="B.dv.ackAll()">Ack ALL</button></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Channels -->
+  <div id="dv-ch-section" style="display:none">
+    <div class="row">
+      <button class="coll-btn" onclick="tog('dv-ch-panel')">Channels</button>
+      <button onclick="B.dv.selAll(true)">Select All</button>
+      <button onclick="B.dv.selAll(false)">Deselect All</button>
+      <label class="chk"><input type="checkbox" id="dv-compact">Compact</label>
+      <label class="chk"><input type="checkbox" id="dv-chart" checked>Chart</label>
+      <button class="primary" onclick="B.dv.subscribe()">Subscribe</button>
+      <button onclick="B.dv.unsubscribe()">Unsubscribe</button>
+      <span class="info" id="dv-sel-count"></span>
+      <span class="info" id="dv-layout-info"></span>
+    </div>
+    <div id="dv-ch-panel" style="display:none"><div id="dv-ch-groups"></div></div>
+  </div>
+
+  <!-- Chart -->
+  <div id="dv-chart-section" style="display:none">
+    <div class="row"><h2>Chart</h2>
+      <select id="dv-chart-range" onchange="B.dv.chartRangeChange()"><option value="60">1m</option><option value="300" selected>5m</option><option value="900">15m</option><option value="3600">1h</option></select>
+      <button onclick="B.dv.loadHistory()">Load History</button><button onclick="B.dv.resetZoom()">Reset</button>
+      <label class="chk"><input type="checkbox" id="dv-chart-follow" checked>Follow</label>
+      <span class="info" id="dv-chart-info"></span>
+    </div>
+    <div class="chart-box" id="chart-container-dv"></div>
+  </div>
+
+  <div class="grid" id="dv-live-grid"></div>
+
+  <div class="log-split">
+    <div><div class="log-hdr"><h2>Log</h2><div class="row"><label class="chk"><input type="checkbox" onchange="B.dv.raw=this.checked">Raw</label><button onclick="clr('dv-log')">Clear</button></div></div><div class="log-box" id="dv-log"></div></div>
+    <div><div class="log-hdr"><h2>Responses</h2><button onclick="clr('dv-resp')">Clear</button></div><div class="log-box" id="dv-resp"></div></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════ -->
 <script>
-// ══════════════════════════════════════════════════════════
-//  State
-// ══════════════════════════════════════════════════════════
-let ws = null, bridgeUrl = '', wsUrl = '', msgId = 0, rawMode = false;
-let knownSources = [];
-const pendingReqs = {};
-const compactLayouts = {};  // layoutId -> { source, tags[] }
-
-// Chart state
-let chart = null;
-const chartSeries = [];     // [{ source, tag, idx }]
-const chartData = [[]];     // [timestamps, ...values]
-const CHART_MAX_POINTS = 4000;
-let chartFollowing = true;
-
-// ══════════════════════════════════════════════════════════
-//  Init
-// ══════════════════════════════════════════════════════════
-async function init() {
-  try {
-    const r = await fetch('/config');
-    const cfg = await r.json();
-    bridgeUrl = cfg.bridgeUrl;
-    wsUrl = cfg.wsUrl;
-  } catch {
-    bridgeUrl = 'http://localhost:5080';
-    wsUrl = 'ws://localhost:5080/ws';
-  }
-  document.getElementById('bridge-url').value = bridgeUrl;
-}
-
-function getBridgeUrl() {
-  const v = document.getElementById('bridge-url').value.trim();
-  if (v) { bridgeUrl = v; wsUrl = v.replace('http://','ws://').replace('https://','wss://') + '/ws'; }
-  return bridgeUrl;
-}
-
-// ══════════════════════════════════════════════════════════
-//  Logging
-// ══════════════════════════════════════════════════════════
-function log(text, cls='') {
-  const el = document.getElementById('log');
-  const d = document.createElement('div');
-  d.className = 'log-line ' + cls;
-  d.textContent = `[${ts()}] ${text}`;
-  el.prepend(d);
-  while (el.children.length > 500) el.removeChild(el.lastChild);
-}
-function respLog(id, status, detail) {
-  const el = document.getElementById('resp-log');
-  const d = document.createElement('div');
-  d.className = 'resp-entry';
-  const sc = status==='ok'?'ok':status==='pending'?'pending':'fail';
-  const req = pendingReqs[id];
-  const op = req?req.op:'?';
-  const src = req&&req.source?` [${req.source}]`:'';
-  d.innerHTML = `<span class="resp-id">[${ts()}] ${id}</span> <span class="resp-status ${sc}">${status.toUpperCase()}</span> <strong>${op}</strong>${src}<br><span class="resp-detail">${esc(detail)}</span>`;
-  el.prepend(d);
-  while (el.children.length > 200) el.removeChild(el.lastChild);
-}
-function clearLog(id) { document.getElementById(id).innerHTML = ''; }
-function ts() { return new Date().toISOString().substring(11,23); }
-function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-// ══════════════════════════════════════════════════════════
-//  WS send with tracking
-// ══════════════════════════════════════════════════════════
-function wsSend(obj) {
-  if (!ws||ws.readyState!==WebSocket.OPEN) { log('Not connected','error'); return; }
-  const j = JSON.stringify(obj);
-  ws.send(j);
-  log(`-> ${j}`, 'sent');
-  if (obj.id) { pendingReqs[obj.id] = { op:obj.op, ts:Date.now(), source:obj.source, tags:obj.tags }; respLog(obj.id,'pending',j); }
-}
-
-// ══════════════════════════════════════════════════════════
-//  REST
-// ══════════════════════════════════════════════════════════
-async function loadSources() {
-  getBridgeUrl();
-  try {
-    const r = await fetch(`${bridgeUrl}/api/sources`);
-    const data = await r.json();
-    log(`REST: ${data.length} source(s)`);
-    onSourcesReceived(data);
-  } catch(e) { log(`REST error: ${e.message}`,'error'); }
-}
-
-function onSourcesReceived(sources) {
-  knownSources = sources;
-  renderSources(sources);
-  updateWriteSelect(sources);
-  renderChannelPanel(sources);
-}
-
-function renderSources(sources) {
-  const g = document.getElementById('sources-grid'); g.innerHTML = '';
-  for (const src of sources) {
-    const c = document.createElement('div'); c.className='card'; c.id=`card-${src.id}`;
-    c.innerHTML = `<h2>${src.id}</h2>` + src.tags.map(t =>
-      `<div class="tag-row"><span class="tag-name">${t.name} <small>(${t.kind})</small></span><span class="tag-value ${t.kind.toLowerCase()}" id="tv-${src.id}-${t.name}">—</span></div>`
-    ).join('');
-    g.appendChild(c);
-  }
-}
-function updateWriteSelect(sources) {
-  document.getElementById('write-source').innerHTML = sources.map(s=>`<option value="${s.id}">${s.id}</option>`).join('');
-}
-function updateTagDisplay(source, tag, value, kind) {
-  const el = document.getElementById(`tv-${source}-${tag}`);
-  if (!el) return;
-  el.textContent = typeof value==='number' ? value.toFixed(3) : JSON.stringify(value);
-  el.className = `tag-value ${(kind||'telemetry').toLowerCase()}`;
-}
-
-// ══════════════════════════════════════════════════════════
-//  Channel panel
-// ══════════════════════════════════════════════════════════
-function renderChannelPanel(sources) {
-  const p = document.getElementById('channel-panel');
-  const c = document.getElementById('channel-groups'); c.innerHTML = '';
-  if (!sources.length) { p.style.display='none'; return; }
-  p.style.display='block';
-  for (const src of sources) {
-    const g = document.createElement('div'); g.className='source-group';
-    const hid = `src-chk-${src.id}`;
-    g.innerHTML =
-      `<div class="source-hdr"><input type="checkbox" id="${hid}" checked onchange="toggleSrcGrp('${src.id}',this.checked)"><label for="${hid}">${src.id}</label><span class="cnt">(${src.tags.length})</span></div>` +
-      `<div class="tag-list" id="tags-${src.id}">` +
-        src.tags.map(t => `<label class="tag-item"><input type="checkbox" checked data-source="${src.id}" data-tag="${t.name}" onchange="updateSelCount()"> <input type="checkbox" class="chart-chk" data-source="${src.id}" data-tag="${t.name}" title="Show in chart"> ${t.name} <span class="kind-badge ${t.kind.toLowerCase()}">${t.kind}</span></label>`).join('') +
-      `</div>`;
-    c.appendChild(g);
-  }
-  updateSelCount();
-}
-function toggleSrcGrp(src, ch) {
-  document.querySelectorAll(`#tags-${src} input[type="checkbox"]`).forEach(cb=>cb.checked=ch);
-  updateSelCount();
-}
-function selAll(ch) {
-  document.querySelectorAll('#channel-groups input[type="checkbox"]').forEach(cb=>cb.checked=ch);
-  updateSelCount();
-}
-function toggleChartAll(ch) {
-  document.querySelectorAll('#channel-groups .chart-chk').forEach(cb => {
-    // Only toggle chart checkbox for selected tags
-    const tagCb = cb.parentElement.querySelector('input[type="checkbox"]:not(.chart-chk)');
-    if (tagCb && tagCb.checked) cb.checked = ch;
+function switchTab(id){
+  document.querySelectorAll('.tab-btn').forEach(b=>{
+    const m=id==='dp'?'Provider':id==='ds'?'Service':'Server';
+    b.classList.toggle('active',b.textContent.includes(m));
   });
+  document.querySelectorAll('.tab-content').forEach(t=>t.classList.toggle('active',t.id==='tab-'+id));
 }
-function updateSelCount() {
-  const sel = getSelectedBySource();
-  let t=0, g=0;
-  for (const s in sel) { t+=sel[s].length; g++; }
-  document.getElementById('sel-count').textContent = `${t} tag${t!==1?'s':''} (${g} group${g!==1?'s':''})`;
-}
-function getSelectedBySource() {
-  const r = {};
-  document.querySelectorAll('#channel-groups .tag-list input[type="checkbox"]:checked:not(.chart-chk)').forEach(cb => {
-    const s=cb.dataset.source, t=cb.dataset.tag;
-    if (s&&t) { if (!r[s]) r[s]=[]; r[s].push(t); }
-  });
-  return r;
-}
-function getChartTags() {
-  const r = [];
-  document.querySelectorAll('#channel-groups .chart-chk:checked').forEach(cb => {
-    r.push({ source: cb.dataset.source, tag: cb.dataset.tag });
-  });
-  return r;
-}
-
-function subscribeSelected() {
-  const bySource = getSelectedBySource();
-  const keys = Object.keys(bySource);
-  if (!keys.length) { log('No tags selected','error'); return; }
-  const compact = document.getElementById('compact-mode').checked;
-  for (const source of keys) {
-    const msg = { op:'subscribe', id:`s${++msgId}`, source, tags:bySource[source] };
-    if (compact) msg.compact = true;
-    wsSend(msg);
-  }
-  log(`Sent ${keys.length} subscribe${compact?' (compact)':''}`, 'push');
-
-  // Setup chart for chart-checked tags
-  const ct = getChartTags();
-  if (ct.length) setupChart(ct);
-}
-function unsubscribeSelected() {
-  const bySource = getSelectedBySource();
-  for (const source in bySource) wsSend({ op:'unsubscribe', id:`u${++msgId}`, source });
-}
+function tog(id){const el=document.getElementById(id);el.style.display=el.style.display==='none'?'block':'none';}
+function clr(id){document.getElementById(id).innerHTML='';}
+function ts(){return new Date().toISOString().substring(11,23);}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+const COLORS=['#4ecca3','#5dade2','#f39c12','#e74c3c','#9b59b6','#1abc9c','#e67e22','#3498db','#e84393','#00cec9','#fdcb6e','#6c5ce7','#ff7675','#74b9ff','#a29bfe','#55efc4','#fab1a0','#81ecec','#dfe6e9','#ffeaa7'];
+const CHART_MAX=4000;
 
 // ══════════════════════════════════════════════════════════
-//  WebSocket
-// ══════════════════════════════════════════════════════════
-function connectWs() {
-  getBridgeUrl();
-  if (ws&&ws.readyState===WebSocket.OPEN) { log('Already connected'); return; }
-  log(`Connecting to ${wsUrl}...`);
-  ws = new WebSocket(wsUrl);
-  ws.onopen = () => {
-    document.getElementById('ws-status').className='status ok';
-    document.getElementById('ws-label').textContent='Connected';
-    log('WebSocket connected','push');
-  };
-  ws.onclose = e => {
-    document.getElementById('ws-status').className='status err';
-    document.getElementById('ws-label').textContent=`Disconnected (${e.code})`;
-    log(`WebSocket closed: ${e.code} ${e.reason}`,'error');
-  };
-  ws.onerror = () => log('WebSocket error','error');
-  ws.onmessage = e => {
-    try { handleMsg(JSON.parse(e.data), e.data); }
-    catch { log(`WS raw: ${e.data}`); }
-  };
-}
-function disconnectWs() {
-  if (ws) { ws.close(); ws=null; }
-  for (const k in compactLayouts) delete compactLayouts[k];
-  updateLayoutInfo();
-}
-
-function handleMsg(msg, raw) {
-  if (rawMode) log(`<- ${raw}`, 'push');
-
-  // Compact data batch
-  if (msg.type === 'd') {
-    const ly = compactLayouts[msg.l];
-    if (!ly) { if (!rawMode) log(`<- compact layoutId=${msg.l} UNKNOWN`,'error'); return; }
-    let n=0;
-    for (let i=0; i<msg.v.length; i++) {
-      if (msg.v[i]==null) continue;
-      updateTagDisplay(ly.source, ly.tags[i], msg.v[i], 'telemetry');
-      pushChartValue(ly.source, ly.tags[i], msg.v[i], msg.ts);
-      n++;
-    }
-    if (!rawMode) log(`<- compact [${ly.source}] ${n}/${msg.v.length} vals (m:${msg.m})`,'push');
-    return;
+class BridgeTab {
+  constructor(prefix,opts={}){
+    this.p=prefix;this.ws=null;this.url='';this.wsUrl='';this.msgId=0;this.raw=false;
+    this.sources=[];this.pending={};this.layouts={};
+    this.hasChart=opts.chart||false;this.chart=null;this.chartSeries=[];this.chartData=[[]];this.chartFollowing=true;this.chartRedrawTimer=null;
+    // Source select IDs for this tab (populated on source load)
+    this.srcSelIds=opts.srcSels||[];
+  }
+  el(id){return document.getElementById(`${this.p}-${id}`);}
+  getUrl(){
+    const v=this.el('url').value.trim();
+    if(v){this.url=v;this.wsUrl=v.replace('http://','ws://').replace('https://','wss://')+'/ws';}
+    if(!this.url)this.url=this.el('url').value.trim()||'http://localhost:5080';
+    if(!this.wsUrl)this.wsUrl=this.url.replace('http://','ws://').replace('https://','wss://')+'/ws';
+    return this.url;
   }
 
-  // Layout update
-  if (msg.type === 'layoutUpdate') {
-    compactLayouts[msg.layoutId] = { source:msg.source, tags:msg.tags };
-    if (!rawMode) log(`<- layoutUpdate [${msg.source}] #${msg.layoutId} [${msg.tags.join(',')}]`,'push');
-    updateLayoutInfo(); return;
-  }
+  // ── Log ──
+  log(text,cls=''){const el=document.getElementById(`${this.p}-log`);const d=document.createElement('div');d.className='log-line '+cls;d.textContent=`[${ts()}] ${text}`;el.prepend(d);while(el.children.length>500)el.removeChild(el.lastChild);}
+  respLog(id,status,detail){const el=document.getElementById(`${this.p}-resp`);const d=document.createElement('div');d.className='resp-entry';const sc=status==='ok'?'ok':status==='pending'?'pending':'fail';const req=this.pending[id];const op=req?req.op:'?';d.innerHTML=`<span class="resp-id">[${ts()}] ${id}</span> <span class="resp-status ${sc}">${status.toUpperCase()}</span> <strong>${op}</strong><br><span class="resp-detail">${esc(detail).substring(0,250)}</span>`;el.prepend(d);while(el.children.length>200)el.removeChild(el.lastChild);}
 
-  // Verbose push
-  if (msg.type==='telemetry'||msg.type==='event'||msg.type==='alarm') {
-    updateTagDisplay(msg.source, msg.tag, msg.value??msg.active, msg.type);
-    if (msg.type==='telemetry' && typeof msg.value==='number') pushChartValue(msg.source, msg.tag, msg.value, msg.ts);
-    if (!rawMode) log(`<- ${msg.type} ${msg.source}/${msg.tag} = ${JSON.stringify(msg.value??msg.active)} (m:${msg.msgId})`,'push');
-    return;
-  }
+  // ── WS ──
+  wsSend(obj){if(!this.ws||this.ws.readyState!==WebSocket.OPEN){this.log('Not connected','error');return;}const j=JSON.stringify(obj);this.ws.send(j);this.log(`-> ${j}`,'sent');if(obj.id){this.pending[obj.id]={op:obj.op,ts:Date.now()};this.respLog(obj.id,'pending',j);}}
+  wsOp(op){this.wsSend({op,id:`${op.substring(0,2)}${++this.msgId}`});}
+  connect(){this.getUrl();if(this.ws&&this.ws.readyState===WebSocket.OPEN){this.log('Already connected');return;}this.log(`Connecting ${this.wsUrl}...`);this.ws=new WebSocket(this.wsUrl);this.ws.onopen=()=>{this.el('ws-status').className='status ok';this.el('ws-label').textContent='Connected';this.log('Connected','push');};this.ws.onclose=e=>{this.el('ws-status').className='status err';this.el('ws-label').textContent=`Disconnected (${e.code})`;this.log(`Closed: ${e.code}`,'error');};this.ws.onerror=()=>this.log('WS error','error');this.ws.onmessage=e=>{try{this.handleMsg(JSON.parse(e.data),e.data);}catch{this.log(`Raw: ${e.data}`);}}}
+  disconnect(){if(this.ws){this.ws.close();this.ws=null;}for(const k in this.layouts)delete this.layouts[k];this.updateLayoutInfo();}
 
-  if (msg.type==='pong') { if (!rawMode) log('<- pong','push'); return; }
-
-  if (msg.type==='response') {
-    // getSources
-    if (msg.ok && msg.sources && Array.isArray(msg.sources)) {
-      onSourcesReceived(msg.sources);
-      if (!rawMode) log(`<- getSources: ${msg.sources.length} source(s)`,'push');
-      if (msg.id) respLog(msg.id,'ok',`${msg.sources.length} source(s)`);
-      return;
-    }
-    // Read response
-    if (msg.ok && msg.id && (msg.value!==undefined || msg.ts!==undefined)) {
-      if (!rawMode) log(`<- read [${msg.id}] value=${JSON.stringify(msg.value)} ts=${msg.ts||'-'}`,'push');
-      if (msg.id) respLog(msg.id,'ok',`value=${JSON.stringify(msg.value)}`);
-      return;
-    }
-    // Compact subscribe
-    if (msg.ok && msg.compact && msg.layout) {
-      const ly = msg.layout;
-      compactLayouts[ly.layoutId] = { source:ly.source, tags:ly.tags };
-      if (!rawMode) log(`<- compact OK [${ly.source}] #${ly.layoutId} ${ly.tags.length} tags`,'push');
-      if (msg.id) respLog(msg.id,'ok',`layout#${ly.layoutId}: ${ly.tags.length} tags`);
-      updateLayoutInfo(); return;
-    }
-    const d = JSON.stringify(msg).substring(0,300);
-    if (msg.id) respLog(msg.id, msg.ok?'ok':'error', d);
-    if (!rawMode) log(`<- response [${msg.id}] ok=${msg.ok} ${d}`, msg.ok?'':'error');
-    return;
-  }
-
-  if (msg.type==='error') {
-    if (!rawMode) log(`<- error [${msg.id||'-'}] ${msg.code}: ${msg.message}`,'error');
-    if (msg.id) respLog(msg.id,'error',`${msg.code}: ${msg.message}`);
-    return;
-  }
-
-  if (!rawMode) log(`<- ${JSON.stringify(msg).substring(0,200)}`);
-}
-
-function updateLayoutInfo() {
-  const keys = Object.keys(compactLayouts);
-  const el = document.getElementById('layout-info');
-  if (!keys.length) { el.textContent=''; return; }
-  el.textContent = 'Layouts: ' + keys.map(id => `${compactLayouts[id].source}:#${id}(${compactLayouts[id].tags.length})`).join(', ');
-}
-
-// ── WS commands ──
-function sendSubscribeAll() {
-  const msg = { op:'subscribe', id:`s${++msgId}`, tags:['ALL'] };
-  if (document.getElementById('compact-mode').checked) msg.compact=true;
-  wsSend(msg);
-}
-function sendUnsubscribeAll() { wsSend({ op:'unsubscribe', id:`u${++msgId}` }); }
-function sendPing() { wsSend({ op:'ping' }); }
-function sendGetSources() { wsSend({ op:'getSources', id:`gs${++msgId}` }); }
-function sendGetStatus() { wsSend({ op:'getStatus', id:`st${++msgId}` }); }
-function sendWrite() {
-  const source=document.getElementById('write-source').value, tag=document.getElementById('write-tag').value;
-  let value=document.getElementById('write-value').value;
-  if (!source||!tag) { log('Source and tag required','error'); return; }
-  const n=Number(value); if (!isNaN(n)&&value!=='') value=n;
-  wsSend({ op:'write', id:`w${++msgId}`, source, tag, value });
-}
-function sendRead() {
-  const source=document.getElementById('write-source').value, tag=document.getElementById('write-tag').value;
-  if (!source||!tag) { log('Source and tag required','error'); return; }
-  wsSend({ op:'read', id:`r${++msgId}`, source, tag });
-}
-
-// ══════════════════════════════════════════════════════════
-//  Chart (uPlot)
-// ══════════════════════════════════════════════════════════
-const COLORS = ['#4ecca3','#5dade2','#f39c12','#e74c3c','#9b59b6','#1abc9c','#e67e22','#3498db','#e84393','#00cec9','#fdcb6e','#6c5ce7','#ff7675','#74b9ff','#a29bfe','#55efc4','#fab1a0','#81ecec','#dfe6e9','#ffeaa7'];
-
-function setupChart(tags) {
-  chartSeries.length = 0;
-  chartData.length = 0;
-  chartData.push([]); // timestamps
-
-  const series = [{ label: 'Time' }];
-  tags.forEach((t, i) => {
-    chartSeries.push({ source: t.source, tag: t.tag, idx: i+1 });
-    chartData.push([]);
-    series.push({
-      label: `${t.source}/${t.tag}`,
-      stroke: COLORS[i % COLORS.length],
-      width: 1.5,
-    });
-  });
-
-  document.getElementById('chart-section').classList.add('visible');
-  const container = document.getElementById('chart-container');
-  container.innerHTML = '';
-
-  const width = container.clientWidth - 16;
-  const opts = {
-    width: width,
-    height: 320,
-    cursor: { drag: { x: true, y: true, uni: 50 } },
-    scales: {
-      x: { time: true },
-    },
-    axes: [
-      {
-        stroke: '#999',
-        grid: { stroke: '#ffffff15' },
-        ticks: { stroke: '#ffffff15' },
-      },
-      {
-        stroke: '#999',
-        grid: { stroke: '#ffffff15' },
-        ticks: { stroke: '#ffffff15' },
-      },
-    ],
-    hooks: {
-      setSelect: [
-        u => {
-          // Zoom on drag select
-          const min = u.posToVal(u.select.left, 'x');
-          const max = u.posToVal(u.select.left + u.select.width, 'x');
-          if (max - min > 0.5) {
-            u.setScale('x', { min, max });
-            chartFollowing = false;
-            document.getElementById('chart-follow').checked = false;
+  // ── Message handler ──
+  handleMsg(msg,raw){
+    if(this.raw)this.log(`<- ${raw}`,'push');
+    if(msg.type==='d'){const ly=this.layouts[msg.l];if(!ly){if(!this.raw)this.log(`compact #${msg.l} unknown`,'error');return;}let n=0;for(let i=0;i<msg.v.length;i++){if(msg.v[i]==null)continue;this.updateTag(ly.source,ly.tags[i],msg.v[i],'telemetry');this.pushChart(ly.source,ly.tags[i],msg.v[i],msg.ts);n++;}if(!this.raw)this.log(`<- compact [${ly.source}] ${n}/${msg.v.length}`,'push');return;}
+    if(msg.type==='layoutUpdate'){this.layouts[msg.layoutId]={source:msg.source,tags:msg.tags};if(!this.raw)this.log(`<- layout#${msg.layoutId} [${msg.source}]`,'push');this.updateLayoutInfo();return;}
+    if(msg.type==='telemetry'||msg.type==='event'||msg.type==='alarm'){this.updateTag(msg.source,msg.tag,msg.value??msg.active,msg.type);if(msg.type==='telemetry'&&typeof msg.value==='number')this.pushChart(msg.source,msg.tag,msg.value,msg.ts);if(!this.raw)this.log(`<- ${msg.type} ${msg.source}/${msg.tag}=${JSON.stringify(msg.value??msg.active)}`,'push');return;}
+    if(msg.type==='pong'){if(!this.raw)this.log('<- pong','push');return;}
+    if(msg.type==='response'){
+      if(msg.ok&&msg.sources&&Array.isArray(msg.sources)){this.onSources(msg.sources);if(!this.raw)this.log(`<- getSources: ${msg.sources.length}`,'push');if(msg.id)this.respLog(msg.id,'ok',`${msg.sources.length} source(s)`);return;}
+      if(msg.ok&&msg.compact&&msg.layout){const ly=msg.layout;this.layouts[ly.layoutId]={source:ly.source,tags:ly.tags};if(!this.raw)this.log(`<- compact OK #${ly.layoutId}`,'push');if(msg.id)this.respLog(msg.id,'ok',`layout#${ly.layoutId}`);this.updateLayoutInfo();return;}
+      if(msg.ok&&(msg.value!==undefined||msg.ts!==undefined)){if(!this.raw)this.log(`<- read val=${JSON.stringify(msg.value)}`,'push');if(msg.id)this.respLog(msg.id,'ok',`val=${JSON.stringify(msg.value)}`);return;}
+      // Query response — show summary
+      if(msg.ok&&msg.data&&msg.kind){
+        const totalVals=msg.data.reduce((s,g)=>s+(g.values?g.values.length:0),0);
+        const tagNames=msg.data.map(g=>`${g.tag}(${g.values?g.values.length:0})`).join(', ');
+        if(!this.raw){
+          this.log(`<- query ${msg.kind} | quality=${msg.quality} | ${msg.data.length} tag(s), ${totalVals} records | truncated=${msg.truncated}`,'push');
+          this.log(`   tags: ${tagNames}`,'push');
+          // Show first few values per tag
+          for(const g of msg.data.slice(0,5)){
+            if(!g.values||!g.values.length)continue;
+            const preview=g.values.slice(0,3).map(v=>`${typeof v.v==='number'?v.v.toFixed(2):v.v}`).join(', ');
+            const suffix=g.values.length>3?` ...+${g.values.length-3} more`:'';
+            this.log(`   ${g.tag}: [${preview}${suffix}]`,'push');
           }
-          u.setSelect({ left: 0, top: 0, width: 0, height: 0 }, false);
+          if(msg.data.length>5)this.log(`   ...+${msg.data.length-5} more tags`,'push');
         }
-      ],
-    },
-    series: series,
-  };
-
-  chart = new uPlot(opts, chartData, container);
-
-  // Wheel zoom
-  container.addEventListener('wheel', e => {
-    e.preventDefault();
-    const rect = chart.over.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
-    const xVal = chart.posToVal(cx, 'x');
-    const [curMin, curMax] = [chart.scales.x.min, chart.scales.x.max];
-    const range = curMax - curMin;
-    const factor = e.deltaY > 0 ? 1.25 : 0.8;
-    const newRange = range * factor;
-    const ratio = (xVal - curMin) / range;
-    const newMin = xVal - newRange * ratio;
-    const newMax = xVal + newRange * (1 - ratio);
-    chart.setScale('x', { min: newMin, max: newMax });
-    chartFollowing = false;
-    document.getElementById('chart-follow').checked = false;
-  }, { passive: false });
-
-  // Resize
-  const ro = new ResizeObserver(() => { if (chart) chart.setSize({ width: container.clientWidth - 16, height: 320 }); });
-  ro.observe(container);
-
-  updateChartInfo();
-}
-
-function pushChartValue(source, tag, value, tsStr) {
-  if (!chart || !chartSeries.length) return;
-  const si = chartSeries.find(s => s.source === source && s.tag === tag);
-  if (!si) return;
-
-  const t = tsStr ? new Date(tsStr).getTime() / 1000 : Date.now() / 1000;
-  const times = chartData[0];
-
-  // Append timestamp if new or same as last
-  if (!times.length || t > times[times.length - 1]) {
-    times.push(t);
-    for (let i = 1; i < chartData.length; i++) chartData[i].push(null);
-  }
-  chartData[si.idx][times.length - 1] = value;
-
-  // Trim old points
-  while (times.length > CHART_MAX_POINTS) {
-    times.shift();
-    for (let i = 1; i < chartData.length; i++) chartData[i].shift();
-  }
-
-  // Throttle chart updates
-  scheduleChartRedraw();
-}
-
-let chartRedrawTimer = null;
-function scheduleChartRedraw() {
-  if (chartRedrawTimer) return;
-  chartRedrawTimer = requestAnimationFrame(() => {
-    chartRedrawTimer = null;
-    if (!chart || !chartData[0].length) return;
-    chart.setData(chartData, false);
-    if (chartFollowing || document.getElementById('chart-follow').checked) {
-      chartFollowing = true;
-      const rangeSec = parseInt(document.getElementById('chart-range').value);
-      const now = chartData[0][chartData[0].length - 1];
-      chart.setScale('x', { min: now - rangeSec, max: now });
-    }
-    updateChartInfo();
-  });
-}
-
-function resetZoom() {
-  chartFollowing = true;
-  document.getElementById('chart-follow').checked = true;
-  scheduleChartRedraw();
-}
-function onChartRangeChange() {
-  chartFollowing = true;
-  document.getElementById('chart-follow').checked = true;
-  scheduleChartRedraw();
-}
-function updateChartInfo() {
-  const pts = chartData[0].length;
-  const series = chartSeries.length;
-  document.getElementById('chart-info').textContent = `${series} series, ${pts} points`;
-}
-
-// ══════════════════════════════════════════════════════════
-//  History loader (REST -> chart)
-// ══════════════════════════════════════════════════════════
-async function loadHistory() {
-  if (!chartSeries.length) { log('No chart series configured — subscribe with chart checkboxes first','error'); return; }
-  getBridgeUrl();
-  const rangeSec = parseInt(document.getElementById('chart-range').value);
-  const from = new Date(Date.now() - rangeSec * 1000).toISOString();
-  const to = new Date().toISOString();
-
-  // Group chart series by source
-  const bySource = {};
-  for (const s of chartSeries) {
-    if (!bySource[s.source]) bySource[s.source] = [];
-    bySource[s.source].push(s);
-  }
-
-  let totalPoints = 0;
-
-  for (const source in bySource) {
-    const tags = bySource[source].map(s => s.tag).join(',');
-    try {
-      const url = `${bridgeUrl}/api/sources/${source}/telemetry?tags=${tags}&from=${from}&to=${to}&limit=5000`;
-      const r = await fetch(url);
-      const resp = await r.json();
-
-      if (!resp.data) continue;
-
-      // resp.data is grouped by tag: [ { tag, values: [{ v, ts, msgId }] } ]
-      for (const group of resp.data) {
-        const si = chartSeries.find(s => s.source === source && s.tag === group.tag);
-        if (!si) continue;
-
-        for (const pt of group.values) {
-          const t = new Date(pt.ts).getTime() / 1000;
-          const times = chartData[0];
-
-          // Find insert position (data should be sorted)
-          let idx = times.length;
-          // Check if this timestamp already exists at the end
-          if (times.length && Math.abs(times[times.length - 1] - t) < 0.001) {
-            idx = times.length - 1;
-          } else if (!times.length || t > times[times.length - 1]) {
-            times.push(t);
-            for (let i = 1; i < chartData.length; i++) chartData[i].push(null);
-            idx = times.length - 1;
-          } else {
-            // Insert in order (binary search)
-            let lo = 0, hi = times.length - 1;
-            while (lo <= hi) {
-              const mid = (lo + hi) >> 1;
-              if (times[mid] < t) lo = mid + 1; else hi = mid - 1;
-            }
-            if (lo < times.length && Math.abs(times[lo] - t) < 0.001) {
-              idx = lo;
-            } else {
-              times.splice(lo, 0, t);
-              for (let i = 1; i < chartData.length; i++) chartData[i].splice(lo, 0, null);
-              idx = lo;
-            }
-          }
-          chartData[si.idx][idx] = pt.v;
-          totalPoints++;
-        }
+        if(msg.id)this.respLog(msg.id,'ok',`${msg.kind} q=${msg.quality} ${msg.data.length} tags ${totalVals} records${msg.truncated?' TRUNCATED':''}`);
+        return;
       }
-
-      log(`REST history: ${source} — ${resp.data.length} tag(s), quality=${resp.quality}`, 'push');
-    } catch (e) {
-      log(`REST history error [${source}]: ${e.message}`, 'error');
+      const d=JSON.stringify(msg).substring(0,300);if(msg.id)this.respLog(msg.id,msg.ok?'ok':'error',d);if(!this.raw)this.log(`<- resp [${msg.id}] ${d}`,msg.ok?'':'error');return;
     }
+    if(msg.type==='error'){if(!this.raw)this.log(`<- ERR ${msg.code}: ${msg.message}`,'error');if(msg.id)this.respLog(msg.id,'error',`${msg.code}: ${msg.message}`);return;}
+    if(!this.raw)this.log(`<- ${JSON.stringify(msg).substring(0,200)}`);
   }
+  updateTag(source,tag,value,kind){const el=document.getElementById(`tv-${this.p}-${source}-${tag}`);if(!el)return;el.textContent=typeof value==='number'?value.toFixed(3):JSON.stringify(value);el.className=`tag-value ${(kind||'telemetry').toLowerCase()}`;}
+  updateLayoutInfo(){const el=this.el('layout-info');if(!el)return;const k=Object.keys(this.layouts);el.textContent=k.length?'Layouts: '+k.map(id=>`${this.layouts[id].source}:#${id}(${this.layouts[id].tags.length})`).join(', '):'';}
 
-  // Trim
-  while (chartData[0].length > CHART_MAX_POINTS) {
-    chartData[0].shift();
-    for (let i = 1; i < chartData.length; i++) chartData[i].shift();
+  // ── Sources & selects ──
+  onSources(sources){
+    this.sources=sources;
+    const opts=sources.map(s=>`<option value="${s.id}">${s.id}</option>`).join('');
+    this.srcSelIds.forEach(selId=>{const el=document.getElementById(selId);if(el)el.innerHTML=opts;});
+    this.renderChannels();
   }
+  async restSources(){this.getUrl();try{const r=await fetch(`/proxy?url=${encodeURIComponent(this.url+'/api/sources')}`);const d=await r.json();this.log(`REST: ${d.length} source(s)`);this.onSources(d);}catch(e){this.log(`REST: ${e.message}`,'error');}}
 
-  log(`Loaded ${totalPoints} history points total`, 'push');
-  chart.setData(chartData, false);
-
-  // Set view to loaded range
-  if (chartData[0].length) {
-    const min = chartData[0][0];
-    const max = chartData[0][chartData[0].length - 1];
-    chart.setScale('x', { min, max });
+  // ── Channels ──
+  renderChannels(){
+    const sec=this.el('ch-section');const c=document.getElementById(`${this.p}-ch-groups`);c.innerHTML='';
+    if(!this.sources.length){sec.style.display='none';return;}
+    sec.style.display='block';
+    for(const src of this.sources){
+      const g=document.createElement('div');g.className='source-group';
+      const hid=`${this.p}-schk-${src.id}`;
+      g.innerHTML=`<div class="source-hdr"><input type="checkbox" id="${hid}" onchange="B.${this.p}.toggleGrp('${src.id}',this.checked)"><label for="${hid}">${src.id}</label><span class="cnt">(${src.tags.length})</span></div>`+
+        `<div class="tag-list" id="${this.p}-tags-${src.id}">`+src.tags.map(t=>`<label class="tag-item"><input type="checkbox" data-source="${src.id}" data-tag="${t.name}" onchange="B.${this.p}.updCount()"> ${t.name} <span class="kind-badge ${t.kind.toLowerCase()}">${t.kind}</span></label>`).join('')+`</div>`;
+      c.appendChild(g);
+    }
+    this.updCount();
   }
-  updateChartInfo();
+  toggleGrp(src,ch){document.querySelectorAll(`#${this.p}-tags-${src} input`).forEach(cb=>cb.checked=ch);this.updCount();}
+  selAll(ch){
+    document.querySelectorAll(`#${this.p}-ch-groups input[type="checkbox"]`).forEach(cb=>cb.checked=ch);
+    this.updCount();
+  }
+  updCount(){const sel=this.getSelected();let t=0,g=0;for(const s in sel){t+=sel[s].length;g++;}this.el('sel-count').textContent=`${t} tag${t!==1?'s':''} (${g} grp)`;}
+  getSelected(){const r={};document.querySelectorAll(`#${this.p}-ch-groups .tag-list input:checked`).forEach(cb=>{const s=cb.dataset.source,t=cb.dataset.tag;if(s&&t){if(!r[s])r[s]=[];r[s].push(t);}});return r;}
+
+  subscribe(){
+    const bySource=this.getSelected();const keys=Object.keys(bySource);
+    if(!keys.length){this.log('No tags selected','error');return;}
+    const compact=document.getElementById(`${this.p}-compact`)?.checked;
+    for(const source of keys){const msg={op:'subscribe',id:`s${++this.msgId}`,source,tags:bySource[source]};if(compact)msg.compact=true;this.wsSend(msg);}
+    this.log(`Sent ${keys.length} subscribe${compact?' (compact)':''}`,'push');
+    this.renderLiveGrid(bySource);
+    if(this.hasChart&&document.getElementById(`${this.p}-chart`)?.checked){const ct=[];for(const s of keys)for(const t of bySource[s])ct.push({source:s,tag:t});if(ct.length)this.setupChart(ct);}
+  }
+  unsubscribe(){const bySource=this.getSelected();for(const s in bySource)this.wsSend({op:'unsubscribe',id:`u${++this.msgId}`,source:s});}
+  renderLiveGrid(bySource){const g=this.el('live-grid');g.innerHTML='';for(const srcId in bySource){const tags=bySource[srcId];const c=document.createElement('div');c.className='card';c.innerHTML=`<h2>${srcId} <small style="color:var(--muted)">(${tags.length})</small></h2>`+tags.map(t=>`<div class="tag-row"><span class="tag-name">${t}</span><span class="tag-value telemetry" id="tv-${this.p}-${srcId}-${t}">—</span></div>`).join('');g.appendChild(c);}}
+
+  // ── REST ──
+  async rest(path,method='GET',body=null){
+    this.getUrl();const target=`${this.url}${path}`;
+    const proxyUrl=`/proxy?url=${encodeURIComponent(target)}`;
+    try{
+      const opts={method};
+      if(body){opts.headers={'Content-Type':'application/json'};opts.body=JSON.stringify(body);}
+      const r=await fetch(proxyUrl,opts);const ct=r.headers.get('content-type')||'';
+      if(ct.includes('json')){const d=await r.json();this.log(`REST ${path} -> ${r.status}`,'push');this.log(JSON.stringify(d,null,2),'push');this.respLog(`r${++this.msgId}`,r.ok?'ok':'error',`${method} ${path}`);}
+      else{const t=await r.text();this.log(`REST ${path} -> ${r.status}: ${t.substring(0,200)}`,r.ok?'push':'error');}
+    }catch(e){this.log(`REST ${path}: ${e.message}`,'error');}
+  }
+  restSrcCmd(suffix){const src=this.getSrcSel('cmd-src');if(!src)return;this.rest(`/api/sources/${src}${suffix}`);}
+  getSrcSel(selSuffix){const el=document.getElementById(`${this.p}-${selSuffix}`);const v=el?.value;if(!v)this.log('Select a source first','error');return v;}
+
+  // ── Read/Write ──
+  sendRead(){const src=this.getSrcSel('rw-src'),tag=this.el('tag')?.value;if(!src||!tag){this.log('Source+tag required','error');return;}this.wsSend({op:'read',id:`r${++this.msgId}`,source:src,tag});}
+  sendWrite(){const src=this.getSrcSel('rw-src'),tag=this.el('tag')?.value;let val=this.el('val')?.value;if(!src||!tag){this.log('Source+tag required','error');return;}const n=Number(val);if(!isNaN(n)&&val!=='')val=n;this.wsSend({op:'write',id:`w${++this.msgId}`,source:src,tag,value:val});}
+
+  // ── Commands ──
+  bridgeCmd(cmd,params){this.wsSend({op:'bridgeCommand',id:`bc${++this.msgId}`,command:cmd,params:params||undefined});}
+  setChunkDur(){const m=parseInt(this.el('chunk-min')?.value);if(isNaN(m)||m<1)return;this.bridgeCmd('setChunkDuration',{minutes:m});}
+  sourceCmd(){const src=this.getSrcSel('sc-src'),cmd=document.getElementById(`${this.p}-sc-cmd`)?.value.trim();if(!src||!cmd){this.log('Source+cmd required','error');return;}let params;const ps=document.getElementById(`${this.p}-sc-params`)?.value.trim();if(ps)try{params=JSON.parse(ps);}catch{this.log('Bad JSON params','error');return;}this.wsSend({op:'sourceCommand',id:`sc${++this.msgId}`,source:src,command:cmd,params});}
+  ackAlarm(){const src=this.getSrcSel('ack-src'),tag=document.getElementById(`${this.p}-ack-tag`)?.value.trim();if(!src||!tag)return;if(tag.toUpperCase()==='ALL')this.wsSend({op:'ackAlarm',id:`aa${++this.msgId}`,source:src,tags:['ALL']});else this.wsSend({op:'ackAlarm',id:`aa${++this.msgId}`,source:src,tag});}
+  ackAll(){const src=this.getSrcSel('ack-src');if(!src)return;this.wsSend({op:'ackAlarm',id:`aa${++this.msgId}`,source:src,tags:['ALL']});}
+  query(op){const src=this.getSrcSel('q-src');if(!src)return;const ts=document.getElementById(`${this.p}-q-tags`)?.value.trim();const tags=ts?(ts.toUpperCase()==='ALL'?['ALL']:ts.split(',').map(s=>s.trim())):undefined;const r=parseInt(document.getElementById(`${this.p}-q-range`).value);const lim=parseInt(document.getElementById(`${this.p}-q-limit`).value)||100;const from=new Date(Date.now()-r*1000).toISOString();const to=new Date().toISOString();this.wsSend({op,id:`q${++this.msgId}`,source:src,tags,from,to,limit:lim});}
+  exportCsv(kind){this.getUrl();const src=this.getSrcSel('exp-src');if(!src)return;const r=parseInt(document.getElementById(`${this.p}-exp-range`).value);const from=new Date(Date.now()-r*1000).toISOString();const to=new Date().toISOString();const target=`${this.url}/api/sources/${src}/export?kind=${kind}&from=${from}&to=${to}`;window.open(`/proxy?url=${encodeURIComponent(target)}`,'_blank');}
+
+  // ── Archives (DataServer) ──
+  async listArchives(){this.getUrl();try{const r=await fetch(`/proxy?url=${encodeURIComponent(this.url+'/api/archives')}`);const d=await r.json();const el=document.getElementById('dv-archives');if(!Array.isArray(d)||!d.length){el.innerHTML='<span class="info">No archives</span>';this.log('Archives: none','push');return;}el.innerHTML=`<table class="arch-table"><thead><tr><th>File</th><th>Size</th><th></th></tr></thead><tbody>`+d.map(a=>{const name=a.fileName||a.name||a;const size=a.sizeBytes?Math.round(a.sizeBytes/1024)+'KB':'-';return`<tr><td>${esc(name)}</td><td>${size}</td><td><button onclick="B.dv.loadArchive('${esc(name)}')">Load</button></td></tr>`;}).join('')+`</tbody></table>`;this.log(`Archives: ${d.length} file(s)`,'push');}catch(e){this.log(`Archives: ${e.message}`,'error');}}
+  async loadArchive(fileName){this.getUrl();try{const r=await fetch(`/proxy?url=${encodeURIComponent(this.url+'/api/archives/load')}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileName})});const d=await r.json();this.log(`Load archive: ${JSON.stringify(d)}`,r.ok?'push':'error');this.respLog(`ar${++this.msgId}`,r.ok?'ok':'error',`load ${fileName}`);}catch(e){this.log(`Load: ${e.message}`,'error');}}
+  loadArchiveFromInput(){const f=document.getElementById('dv-arch-file')?.value.trim();if(!f){this.log('Enter file path','error');return;}this.loadArchive(f);}
+
+  // ── Chart ──
+  setupChart(tags){
+    if(!this.hasChart)return;this.chartSeries.length=0;this.chartData.length=0;this.chartData.push([]);
+    const series=[{label:'Time'}];tags.forEach((t,i)=>{this.chartSeries.push({source:t.source,tag:t.tag,idx:i+1});this.chartData.push([]);series.push({label:`${t.source}/${t.tag}`,stroke:COLORS[i%COLORS.length],width:1.5});});
+    document.getElementById(`${this.p}-chart-section`).style.display='block';
+    const container=document.getElementById(`chart-container-${this.p}`);container.innerHTML='';
+    const w=container.clientWidth-10;
+    this.chart=new uPlot({width:w,height:280,cursor:{drag:{x:true,y:true,uni:50}},scales:{x:{time:true}},axes:[{stroke:'#999',grid:{stroke:'#ffffff15'},ticks:{stroke:'#ffffff15'}},{stroke:'#999',grid:{stroke:'#ffffff15'},ticks:{stroke:'#ffffff15'}}],hooks:{setSelect:[u=>{const min=u.posToVal(u.select.left,'x'),max=u.posToVal(u.select.left+u.select.width,'x');if(max-min>.5){u.setScale('x',{min,max});this.chartFollowing=false;document.getElementById(`${this.p}-chart-follow`).checked=false;}u.setSelect({left:0,top:0,width:0,height:0},false);}]},series},this.chartData,container);
+    container.addEventListener('wheel',e=>{e.preventDefault();const rect=this.chart.over.getBoundingClientRect();const cx=e.clientX-rect.left;const xv=this.chart.posToVal(cx,'x');const[mi,ma]=[this.chart.scales.x.min,this.chart.scales.x.max];const rng=ma-mi;const f=e.deltaY>0?1.25:.8;const nr=rng*f;const ratio=(xv-mi)/rng;this.chart.setScale('x',{min:xv-nr*ratio,max:xv+nr*(1-ratio)});this.chartFollowing=false;document.getElementById(`${this.p}-chart-follow`).checked=false;},{passive:false});
+    new ResizeObserver(()=>{if(this.chart)this.chart.setSize({width:container.clientWidth-10,height:280});}).observe(container);
+    this.updChartInfo();
+  }
+  pushChart(source,tag,value,tsStr){if(!this.chart||!this.chartSeries.length)return;const si=this.chartSeries.find(s=>s.source===source&&s.tag===tag);if(!si)return;const t=tsStr?new Date(tsStr).getTime()/1000:Date.now()/1000;const times=this.chartData[0];if(!times.length||t>times[times.length-1]){times.push(t);for(let i=1;i<this.chartData.length;i++)this.chartData[i].push(null);}this.chartData[si.idx][times.length-1]=value;while(times.length>CHART_MAX){times.shift();for(let i=1;i<this.chartData.length;i++)this.chartData[i].shift();}this.schedRedraw();}
+  schedRedraw(){if(this.chartRedrawTimer)return;this.chartRedrawTimer=requestAnimationFrame(()=>{this.chartRedrawTimer=null;if(!this.chart||!this.chartData[0].length)return;this.chart.setData(this.chartData,false);if(this.chartFollowing||document.getElementById(`${this.p}-chart-follow`).checked){this.chartFollowing=true;const r=parseInt(document.getElementById(`${this.p}-chart-range`).value);const now=this.chartData[0][this.chartData[0].length-1];this.chart.setScale('x',{min:now-r,max:now});}this.updChartInfo();});}
+  resetZoom(){this.chartFollowing=true;document.getElementById(`${this.p}-chart-follow`).checked=true;this.schedRedraw();}
+  chartRangeChange(){this.chartFollowing=true;document.getElementById(`${this.p}-chart-follow`).checked=true;this.schedRedraw();}
+  updChartInfo(){const el=document.getElementById(`${this.p}-chart-info`);if(el)el.textContent=`${this.chartSeries.length} series, ${this.chartData[0].length} pts`;}
+  async loadHistory(){
+    if(!this.chartSeries.length){this.log('No chart — subscribe with Chart enabled first','error');return;}
+    this.getUrl();const rangeSec=parseInt(document.getElementById(`${this.p}-chart-range`).value);const from=new Date(Date.now()-rangeSec*1000).toISOString(),to=new Date().toISOString();
+    const bySource={};for(const s of this.chartSeries){if(!bySource[s.source])bySource[s.source]=[];bySource[s.source].push(s);}
+    let total=0;
+    for(const source in bySource){const tags=bySource[source].map(s=>s.tag).join(',');
+      try{const target=`${this.url}/api/sources/${source}/telemetry?tags=${tags}&from=${from}&to=${to}&limit=5000`;const r=await fetch(`/proxy?url=${encodeURIComponent(target)}`);const resp=await r.json();if(!resp.data)continue;
+        for(const group of resp.data){const si=this.chartSeries.find(s=>s.source===source&&s.tag===group.tag);if(!si)continue;
+          for(const pt of group.values){const t=new Date(pt.ts).getTime()/1000;const times=this.chartData[0];
+            if(!times.length||t>times[times.length-1]){times.push(t);for(let i=1;i<this.chartData.length;i++)this.chartData[i].push(null);this.chartData[si.idx][times.length-1]=pt.v;}
+            else{let lo=0,hi=times.length-1;while(lo<=hi){const mid=(lo+hi)>>1;if(times[mid]<t)lo=mid+1;else hi=mid-1;}if(lo<times.length&&Math.abs(times[lo]-t)<.001){this.chartData[si.idx][lo]=pt.v;}else{times.splice(lo,0,t);for(let i=1;i<this.chartData.length;i++)this.chartData[i].splice(lo,0,null);this.chartData[si.idx][lo]=pt.v;}}
+            total++;}}
+        this.log(`History: ${source} q=${resp.quality}`,'push');
+      }catch(e){this.log(`History ${source}: ${e.message}`,'error');}}
+    while(this.chartData[0].length>CHART_MAX){this.chartData[0].shift();for(let i=1;i<this.chartData.length;i++)this.chartData[i].shift();}
+    this.log(`Loaded ${total} history points`,'push');this.chart.setData(this.chartData,false);
+    if(this.chartData[0].length)this.chart.setScale('x',{min:this.chartData[0][0],max:this.chartData[0][this.chartData[0].length-1]});this.updChartInfo();
+  }
 }
 
 // ══════════════════════════════════════════════════════════
-init();
+const B = {
+  dp: new BridgeTab('dp',{chart:false, srcSels:['dp-cmd-src','dp-rw-src','dp-sc-src','dp-ack-src']}),
+  ds: new BridgeTab('ds',{chart:true,  srcSels:['ds-cmd-src','ds-rw-src','ds-sc-src','ds-ack-src','ds-q-src','ds-exp-src']}),
+  dv: new BridgeTab('dv',{chart:true,  srcSels:['dv-cmd-src','dv-sc-src','dv-ack-src','dv-q-src','dv-exp-src']}),
+};
+
+// Init URLs
+(async()=>{
+  try{const r=await fetch('/config');const cfg=await r.json();
+    document.getElementById('ds-url').value=cfg.bridgeUrl;
+    B.ds.url=cfg.bridgeUrl;B.ds.wsUrl=cfg.wsUrl;
+  }catch{}
+  // Ensure url properties are set from input values
+  ['dp','ds','dv'].forEach(p=>B[p].getUrl());
+})();
 </script>
 </body>
 </html>

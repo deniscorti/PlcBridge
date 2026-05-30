@@ -1,0 +1,53 @@
+{
+  // Target Bridge instance
+  "targetHost": "127.0.0.1",
+  "targetPort": 9100,
+
+  // Send interval in ms (50 = 20Hz, 100 = 10Hz, 200 = 5Hz)
+  "intervalMs": 100,
+
+  // Metadata packet interval (for auto-discovery)
+  "metadataIntervalSec": 10,
+
+  // Data source groups
+  "groups": [
+    {
+      // Group name (becomes the DataSource name in Bridge)
+      "name": "Line1",
+
+      // Number of auto-generated telemetry channels (Canale1..CanaleN)
+      "channelCount": 1000,
+
+      // Add cycle_start + cycle_end event tags
+      "addEvents": true,
+
+      // Add alarm_high alarm tag
+      "addAlarm": true
+    },
+    {
+      "name": "Line2",
+      "channelCount": 500,
+      "addEvents": true,
+      "addAlarm": true
+    }
+
+    // ── Examples ──
+
+    // Stress test: 50 channels
+    // { "name": "StressTest", "channelCount": 50, "addEvents": false, "addAlarm": false }
+
+    // Custom tags (ignores channelCount):
+    // {
+    //   "name": "CustomGroup",
+    //   "channelCount": 0,
+    //   "addEvents": false,
+    //   "addAlarm": false,
+    //   "tags": [
+    //     { "name": "Temperature", "kind": "Telemetry" },
+    //     { "name": "Pressure",    "kind": "Telemetry" },
+    //     { "name": "CycleEnd",    "kind": "Event" },
+    //     { "name": "OverTemp",    "kind": "Alarm" }
+    //   ]
+    // }
+  ]
+}

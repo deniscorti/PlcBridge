@@ -1,45 +1,58 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 // ──────────────────────────────────────────────────────────
 //  Bridge UDP Simulator — Configurable
 //
-//  Generates sine/sawtooth/triangle curves for telemetry,
-//  with configurable groups, channel count, and frequency.
+//  Configuration loaded from simulator.json (or specify path
+//  as first argument). Falls back to defaults if not found.
 //
 //  Usage:
-//    dotnet run -- [targetHost] [targetPort] [intervalMs] [groups]
+//    dotnet run [-- path/to/simulator.json]
 //
-//  groups format: "GroupName:count,GroupName:count,..."
-//    e.g. "Temperatures:20,Pressures:10,Speeds:5"
-//
-//  Defaults: localhost 9100 50 "Line1:10,Line2:5"
+//  See simulator.json for all options.
 // ──────────────────────────────────────────────────────────
 
-var targetHost = args.Length > 0 ? args[0] : "127.0.0.1";
-var targetPort = args.Length > 1 ? int.Parse(args[1]) : 9100;
-var intervalMs = args.Length > 2 ? int.Parse(args[2]) : 50;
-var groupsDef  = args.Length > 3 ? args[3] : "Line1:10,Line2:5";
+// Load config
+var configPath = args.Length > 0 ? args[0] : "simulator.json";
+var config = LoadConfig(configPath);
 
-// Parse groups
+var targetHost = config.TargetHost;
+var targetPort = config.TargetPort;
+var intervalMs = config.IntervalMs;
+
+// Build sources from config groups
 var sources = new List<SimSource>();
-foreach (var part in groupsDef.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+foreach (var grp in config.Groups)
 {
-    var split = part.Split(':');
-    var name = split[0].Trim();
-    var count = split.Length > 1 ? int.Parse(split[1].Trim()) : 10;
-
     var tags = new List<SimTag>();
-    for (var i = 1; i <= count; i++)
-        tags.Add(new SimTag($"Canale{i}", 0)); // Telemetry
 
-    // Add 1-2 events and 1 alarm per group for realism
-    tags.Add(new SimTag("cycle_start", 1));
-    tags.Add(new SimTag("cycle_end", 1));
-    tags.Add(new SimTag("alarm_high", 2));
+    if (grp.Tags is { Count: > 0 })
+    {
+        // Explicit tags defined
+        foreach (var t in grp.Tags)
+            tags.Add(new SimTag(t.Name, t.Kind switch { "Event" => 1, "Alarm" => 2, _ => 0 }));
+    }
+    else
+    {
+        // Auto-generate Canale1..CanaleN
+        for (var i = 1; i <= grp.ChannelCount; i++)
+            tags.Add(new SimTag($"Canale{i}", 0));
+    }
 
-    sources.Add(new SimSource(name, tags));
+    // Add events/alarms if configured
+    if (grp.AddEvents)
+    {
+        tags.Add(new SimTag("cycle_start", 1));
+        tags.Add(new SimTag("cycle_end", 1));
+    }
+    if (grp.AddAlarm)
+        tags.Add(new SimTag("alarm_high", 2));
+
+    sources.Add(new SimSource(grp.Name, tags));
 }
 
 var totalTags = sources.Sum(s => s.Tags.Count);
@@ -70,7 +83,7 @@ var rng = new Random(42); // Fixed seed for reproducible curves
 var tick = 0u;
 var cts = new CancellationTokenSource();
 var lastMetadataSent = DateTimeOffset.MinValue;
-const int metadataIntervalSec = 10;
+var metadataIntervalSec = config.MetadataIntervalSec;
 
 // Pre-compute curve parameters per tag for variety
 var curveParams = new Dictionary<string, CurveParam>();
@@ -261,7 +274,49 @@ static uint Crc32(string input)
 }
 
 // ──────────────────────────────────────────────────────────
-//  Models
+//  Config loader (local function — must precede type decls)
+// ──────────────────────────────────────────────────────────
+
+static SimConfig LoadConfig(string path)
+{
+    if (File.Exists(path))
+    {
+        try
+        {
+            var json = File.ReadAllText(path);
+            var opts = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                ReadCommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true
+            };
+            var cfg = JsonSerializer.Deserialize<SimConfig>(json, opts);
+            if (cfg is not null && cfg.Groups.Count > 0)
+            {
+                Console.WriteLine($"  Config loaded from: {Path.GetFullPath(path)}");
+                return cfg;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  Warning: failed to parse {path}: {ex.Message}");
+        }
+    }
+    else
+    {
+        // Create default config file for easy editing
+        var def = SimConfig.Default();
+        var opts = new JsonSerializerOptions { WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
+        File.WriteAllText(path, JsonSerializer.Serialize(def, opts));
+        Console.WriteLine($"  Config not found — created default: {Path.GetFullPath(path)}");
+        return def;
+    }
+
+    return SimConfig.Default();
+}
+
+// ──────────────────────────────────────────────────────────
+//  Models & Configuration types
 // ──────────────────────────────────────────────────────────
 
 enum CurveType { Sine, Sawtooth, Triangle }
@@ -269,3 +324,36 @@ enum CurveType { Sine, Sawtooth, Triangle }
 sealed record SimTag(string Name, byte Kind);
 sealed record SimSource(string Name, List<SimTag> Tags);
 sealed record CurveParam(CurveType CurveType, double BaseValue, double Amplitude, double Period, double Phase, double NoiseLevel);
+
+sealed class SimConfig
+{
+    public string TargetHost { get; set; } = "127.0.0.1";
+    public int TargetPort { get; set; } = 9100;
+    public int IntervalMs { get; set; } = 50;
+    public int MetadataIntervalSec { get; set; } = 10;
+    public List<SimGroupConfig> Groups { get; set; } = [];
+
+    public static SimConfig Default() => new()
+    {
+        Groups =
+        [
+            new() { Name = "Line1", ChannelCount = 10, AddEvents = true, AddAlarm = true },
+            new() { Name = "Line2", ChannelCount = 5, AddEvents = true, AddAlarm = true }
+        ]
+    };
+}
+
+sealed class SimGroupConfig
+{
+    public string Name { get; set; } = "Group1";
+    public int ChannelCount { get; set; } = 10;
+    public bool AddEvents { get; set; } = true;
+    public bool AddAlarm { get; set; } = true;
+    public List<SimTagConfig>? Tags { get; set; }
+}
+
+sealed class SimTagConfig
+{
+    public string Name { get; set; } = "";
+    public string Kind { get; set; } = "Telemetry"; // Telemetry, Event, Alarm
+}

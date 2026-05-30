@@ -7,4 +7,9 @@
     <RootNamespace>Bridge.Tools.UdpSimulator</RootNamespace>
     <NoWarn>CA1707</NoWarn>
   </PropertyGroup>
+  <ItemGroup>
+    <None Update="simulator.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

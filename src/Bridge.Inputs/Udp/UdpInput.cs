@@ -145,11 +145,12 @@ public sealed class UdpInput : IDataInput
             offset += 2;
 
             DataSource? ds = null;
+            var isNew = false;
             if (!_discoveredSources.TryGetValue(sourceName, out ds))
             {
                 ds = _sourceResolver(sourceName);
                 _discoveredSources[sourceName] = ds;
-                OnSourceDiscovered?.Invoke(ds);
+                isNew = true;
             }
 
             for (int t = 0; t < tagCount && offset < data.Length; t++)
@@ -172,6 +173,10 @@ public sealed class UdpInput : IDataInput
                 if (ds.TryRegisterTag(tag))
                     _tagIdMap[tag.TagId] = tag;
             }
+
+            // Fire discovery event after tags are registered
+            if (isNew)
+                OnSourceDiscovered?.Invoke(ds);
         }
     }
 

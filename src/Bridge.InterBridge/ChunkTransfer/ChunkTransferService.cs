@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Bridge.Core.Buffer;
+using Bridge.Core.Model;
 using Bridge.Core.Services;
 using Bridge.InterBridge.WsClient;
 using Microsoft.Extensions.Logging;
@@ -23,6 +24,9 @@ public sealed class ChunkTransferService
     public int PendingCount { get { lock (_queueLock) return _pending.Count; } }
     public int CompletedCount => _completedTransfers;
     public long AvgTransferMs => _completedTransfers > 0 ? _totalTransferMs / _completedTransfers : 0;
+
+    /// <summary>Fired when a full-quality chunk has been transferred and inserted into the buffer.</summary>
+    public event Action<Chunk>? OnChunkTransferred;
 
     public ChunkTransferService(BufferManager bufferManager, ILogger<ChunkTransferService> logger)
     {
@@ -104,11 +108,46 @@ public sealed class ChunkTransferService
 
             var result = await req.Client.RequestChunkAsync(req.ChunkId);
 
-            // Create a Full quality chunk to replace the Live one in the buffer
             var chunk = new Chunk(req.SourceId, req.FromTs, req.ToTs, ChunkQuality.Full);
+
+            if (result.TryGetProperty("records", out var recordsEl) && recordsEl.ValueKind == JsonValueKind.Array)
+            {
+                var values = new List<TagValue>();
+                foreach (var rec in recordsEl.EnumerateArray())
+                {
+                    var source = rec.GetProperty("source").GetString()!;
+                    var tag = rec.GetProperty("tag").GetString()!;
+                    var kindStr = rec.GetProperty("kind").GetString()!;
+                    var kind = Enum.Parse<DataKind>(kindStr, true);
+
+                    object? value = null;
+                    if (rec.TryGetProperty("value", out var vProp))
+                    {
+                        value = vProp.ValueKind switch
+                        {
+                            JsonValueKind.Number => vProp.GetDouble(),
+                            JsonValueKind.True => true,
+                            JsonValueKind.False => false,
+                            JsonValueKind.String => vProp.GetString(),
+                            _ => vProp.ToString()
+                        };
+                    }
+
+                    var ts = rec.TryGetProperty("ts", out var tsProp) ? DateTimeOffset.Parse(tsProp.GetString()!) : req.FromTs;
+                    var msgId = rec.TryGetProperty("msgId", out var mProp) ? mProp.GetUInt32() : 0u;
+
+                    values.Add(new TagValue { Source = source, Tag = tag, Kind = kind, Value = value, Timestamp = ts, MsgId = msgId });
+                }
+
+                chunk.AddRange(values);
+                _logger.LogDebug("Chunk {ChunkId} received {Count} records from upstream", req.ChunkId, values.Count);
+            }
+
             chunk.Seal();
 
             _bufferManager.GetOrCreateBuffer(req.SourceId).ReplaceChunk(chunk);
+
+            OnChunkTransferred?.Invoke(chunk);
 
             sw.Stop();
             Interlocked.Increment(ref _completedTransfers);

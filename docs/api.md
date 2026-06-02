@@ -50,12 +50,25 @@ Base URL: `http://<host>:<port>/api`
 
 | Metodo | Path                                          | Descrizione                       | Modalità |
 |--------|-----------------------------------------------|-----------------------------------|----------|
-| GET    | `/archives`                                   | Elenco archivi Parquet (`?source=linea1`) | DataService, DataServer |
-| POST   | `/archives/load`                              | Carica archivio in memoria. Body: `{ "source": "...", "file": "..." }` | DataServer |
+| GET    | `/archives`                                   | Elenco archivi Parquet con metadati parsed (`?source=linea1&kind=telemetry`) | DataService, DataServer |
+| POST   | `/archives/load`                              | Carica singolo file in memoria. Body: `{ "source": "...", "file": "...", "tags": ["t1","t2"] }` | DataServer |
+| POST   | `/archives/load-range`                        | Carica archivi per intervallo temporale. Body: `{ "source": "...", "kind": "telemetry", "from": "...", "to": "...", "tags": ["t1"] }` | DataServer |
 | GET    | `/sources/{source}/export`                    | Export dati come file scaricabile. Query: `?tags=t1,t2&from=...&to=...&kind=telemetry&format=csv` | DataService, DataServer |
 | GET    | `/sources/{source}/chunks`                    | Elenco chunk con stato (`?quality=live&quality=full`) | DataService, DataServer |
 | GET    | `/sources/{source}/chunks/{chunkId}/download` | Download chunk come file Parquet  | DataService, DataServer |
 | GET    | `/sources/{source}/chunks/{chunkId}`          | Dettaglio chunk (metadati, qualità, record count) | DataService, DataServer |
+
+**Formato file Parquet**: un file per (source, DataKind, chunk) con schema wide — timestamp e msgId come prime colonne, poi un colonna nullable `double?` per ogni tag. Nome: `{source}_{kind}_{fromTs}_{toTs}_{firstMsgId}_{lastMsgId}.parquet`.
+
+**Risposta `/archives`**:
+```jsonc
+[
+  { "file": "linea1_telemetry_2026-06-02_10-00-00_2026-06-02_10-05-00_100000_100120.parquet",
+    "size": 52400, "source": "linea1", "kind": "telemetry",
+    "fromTs": "2026-06-02T10:00:00Z", "toTs": "2026-06-02T10:05:00Z",
+    "firstMsgId": 100000, "lastMsgId": 100120 }
+]
+```
 
 ### Metriche e stato
 
@@ -244,7 +257,10 @@ Ogni messaggio client→server porta un campo `id` (opzionale) per correlare la 
 
 // === Archivi ===
 { "type": "response", "id": "a1", "ok": true, "archives": [
-    { "file": "linea1_2026-05-24_10-00_100000.parquet", "from": "...", "to": "...", "size": 1048576 }
+    { "file": "linea1_telemetry_2026-05-24_10-00-00_2026-05-24_10-05-00_100000_100120.parquet",
+      "size": 52400, "source": "linea1", "kind": "telemetry",
+      "fromTs": "2026-05-24T10:00:00Z", "toTs": "2026-05-24T10:05:00Z",
+      "firstMsgId": 100000, "lastMsgId": 100120 }
 ]}
 
 // === Risultato comandi sorgente ===
@@ -274,19 +290,25 @@ Ogni messaggio client→server porta un campo `id` (opzionale) per correlare la 
 { "type": "replayEnd", "id": "rp1" }
 
 // === Chunk transfer inter-bridge ===
-// DataService notifica chunk disponibile
+// DataService notifica chunk disponibile (broadcast a tutti i client WS)
 { "type": "chunkReady", "source": "linea1", "chunkId": "c-20260524-1000",
   "fromTs": "2026-05-24T10:00:00Z", "toTs": "2026-05-24T10:05:00Z",
-  "firstMsgId": 100000, "lastMsgId": 100120, "sizeBytes": 52400, "records": 120 }
+  "firstMsgId": 100000, "lastMsgId": 100120, "records": 120 }
 
-// DataServer richiede chunk (background o prioritario)
+// DataServer richiede chunk
 { "op": "chunkRequest", "id": "cr1", "source": "linea1", "chunkId": "c-20260524-1000" }
 
-// DataService trasferisce chunk compresso (WS binary frame tra start e end)
-{ "type": "chunkTransferStart", "source": "linea1", "chunkId": "c-20260524-1000",
-  "compressed": "brotli", "sizeCompressed": 8200, "sizeOriginal": 52400 }
-// ...binary frame(s) con dati compressi...
-{ "type": "chunkTransferEnd", "source": "linea1", "chunkId": "c-20260524-1000", "ok": true }
+// DataService risponde con tutti i record del chunk
+{ "type": "response", "id": "cr1", "ok": true,
+  "chunkId": "c-20260524-1000", "source": "linea1",
+  "fromTs": "2026-05-24T10:00:00Z", "toTs": "2026-05-24T10:05:00Z",
+  "firstMsgId": 100000, "lastMsgId": 100120,
+  "records": [
+    { "source": "linea1", "tag": "temperature", "kind": "telemetry", "value": 23.4, "ts": "...", "msgId": 100000 },
+    { "source": "linea1", "tag": "pressure", "kind": "telemetry", "value": 1.02, "ts": "...", "msgId": 100001 }
+  ]
+}
+// Il DataServer deserializza i record, crea un chunk Full, lo inserisce nel buffer e lo salva su Parquet
 
 // === Recovery inter-bridge (per gap nello stream live) ===
 { "type": "recoveryStart", "source": "linea1", "fromMsgId": 100230, "toMsgId": 100234 }

@@ -24,7 +24,26 @@ Log.Logger = new LoggerConfiguration()
 
 try
 {
+    // Support --config <file> to load a custom configuration file per instance
+    var configFile = GetConfigFileFromArgs(args);
+
+    Console.WriteLine($"Starting Bridge Host... config {configFile}");
+
     var builder = WebApplication.CreateBuilder(args);
+
+
+    if (string.IsNullOrEmpty(configFile))
+    {
+        var env = builder.Environment.EnvironmentName;
+        configFile = $"appsettings_{env}.json";
+    }
+
+
+    if (configFile is not null)
+    {
+        builder.Configuration.AddJsonFile(configFile, optional: false, reloadOnChange: false);
+        Log.Information("Loaded configuration from {ConfigFile}", configFile);
+    }
 
     builder.Host.UseSerilog((ctx, cfg) => cfg
         .ReadFrom.Configuration(ctx.Configuration)
@@ -34,6 +53,9 @@ try
     var bridgeSection = builder.Configuration.GetSection(BridgeOptions.SectionName);
     builder.Services.Configure<BridgeOptions>(bridgeSection);
     var bridgeOpts = bridgeSection.Get<BridgeOptions>() ?? new BridgeOptions();
+
+    // ── HTTP: bind Kestrel alla porta configurata ──
+    builder.WebHost.UseUrls($"http://*:{bridgeOpts.Http.Port}");
 
     // ── Auth ──
     if (!string.IsNullOrEmpty(bridgeOpts.Auth.ApiKey))
@@ -69,13 +91,15 @@ try
     }
 
     // ── Storage ──
+    // DataService: scrive in ParquetOutputPath
+    // DataServer: carica da ParquetArchivePath (non scrive)
     var needsStorage = (bridgeOpts.Mode == BridgeMode.DataService && bridgeOpts.Buffer.PersistToDisk)
                     || bridgeOpts.Mode == BridgeMode.DataServer;
     if (needsStorage)
     {
-        builder.Services.AddSingleton(new ParquetStorage(
-            bridgeOpts.Buffer.DiskPath,
-            bridgeOpts.Buffer.ArchivePath));
+        var outputPath = bridgeOpts.Buffer.ParquetOutputPath;
+        var archivePath = bridgeOpts.Buffer.ParquetArchivePath;
+        builder.Services.AddSingleton(new ParquetStorage(outputPath, archivePath));
     }
 
     // ── Chunk transfer (DataServer) ──
@@ -281,23 +305,45 @@ try
         }
     };
 
-    // ── Parquet flush on chunk sealed ──
-    if (bufMgr is not null && storage is not null && bridgeOpts.Buffer.PersistToDisk)
+    // ── Parquet flush + chunkReady notification on chunk sealed ──
+    if (bufMgr is not null)
     {
         bufMgr.OnChunkSealed += chunk =>
         {
-            _ = Task.Run(async () =>
+            // Flush to Parquet (DataService with PersistToDisk, or DataServer)
+            if (storage is not null && bridgeOpts.Buffer.PersistToDisk)
             {
-                try
+                _ = Task.Run(async () =>
                 {
-                    await storage.WriteChunkAsync(chunk);
-                    Log.Information("Flushed chunk {ChunkId} for source {Source} ({Records} records)",
-                        chunk.ChunkId, chunk.Source, chunk.RecordCount);
-                }
-                catch (Exception ex) { Log.Error(ex, "Failed to flush chunk {ChunkId}", chunk.ChunkId); }
-            });
+                    try
+                    {
+                        await storage.WriteChunkAsync(chunk);
+                        Log.Information("Flushed chunk {ChunkId} for source {Source} ({Records} records)",
+                            chunk.ChunkId, chunk.Source, chunk.RecordCount);
+                    }
+                    catch (Exception ex) { Log.Error(ex, "Failed to flush chunk {ChunkId}", chunk.ChunkId); }
+                });
+            }
+
+            // Notify all connected WS clients that a chunk is ready (inter-bridge protocol)
+            var chunkReadyMsg = new
+            {
+                type = "chunkReady",
+                source = chunk.Source,
+                chunkId = chunk.ChunkId,
+                fromTs = chunk.FromTs,
+                toTs = chunk.ToTs,
+                firstMsgId = chunk.FirstMsgId,
+                lastMsgId = chunk.LastMsgId,
+                records = chunk.RecordCount
+            };
+            _ = connMgr.BroadcastAsync(chunkReadyMsg);
         };
     }
+
+    // Note: il DataServer NON scrive Parquet. I chunk Full ricevuti via chunk transfer
+    // rimangono in memoria. Per persistenza, il DataService produce i file Parquet
+    // che possono essere trasferiti al DataServer e caricati via /archives/load.
 
     // ── Map endpoints ──
     app.UseWebSockets();
@@ -339,4 +385,14 @@ catch (Exception ex)
 finally
 {
     await Log.CloseAndFlushAsync();
+}
+
+static string? GetConfigFileFromArgs(string[] args)
+{
+    for (var i = 0; i < args.Length - 1; i++)
+    {
+        if (args[i] is "--config" or "-c")
+            return args[i + 1];
+    }
+    return null;
 }

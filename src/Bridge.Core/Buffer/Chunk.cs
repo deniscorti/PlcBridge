@@ -141,6 +141,21 @@ public sealed class Chunk
         }
     }
 
+    public IReadOnlyList<TagValue> GetValuesByKind(DataKind kind)
+    {
+        lock (_lock)
+        {
+            var list = kind switch
+            {
+                DataKind.Telemetry => _telemetry,
+                DataKind.Event => _events,
+                DataKind.Alarm => _alarms,
+                _ => _telemetry
+            };
+            return list.ToList();
+        }
+    }
+
     /// <summary>Extract values with timestamp after cutoff (for boundary handling).</summary>
     public IReadOnlyList<TagValue> ExtractAfter(DateTimeOffset cutoff)
     {

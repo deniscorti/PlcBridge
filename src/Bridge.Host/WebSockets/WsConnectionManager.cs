@@ -59,5 +59,21 @@ public sealed class WsConnectionManager
         }
     }
 
+    public async Task BroadcastAsync<T>(T message, CancellationToken ct = default)
+    {
+        if (_connections.IsEmpty) return;
+        var json = JsonSerializer.SerializeToUtf8Bytes(message, JsonOpts);
+
+        foreach (var (_, socket) in _connections)
+        {
+            if (socket.State != WebSocketState.Open) continue;
+            try
+            {
+                await socket.SendAsync(json, WebSocketMessageType.Text, true, ct);
+            }
+            catch { }
+        }
+    }
+
     public int ConnectionCount => _connections.Count;
 }

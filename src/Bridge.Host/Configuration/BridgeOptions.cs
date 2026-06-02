@@ -77,9 +77,29 @@ public sealed class BufferOptions
 {
     public int InMemoryMinutes { get; set; } = 60;
     public int ChunkDurationMin { get; set; } = 5;
+
+    // ── DataService: scrittura Parquet ──
+
+    /// <summary>Se true, il DataService scrive i chunk sealed su disco in formato Parquet.</summary>
     public bool PersistToDisk { get; set; } = true;
-    public string DiskPath { get; set; } = "./data";
-    public string ArchivePath { get; set; } = "./data/archives";
+
+    /// <summary>Cartella dove il DataService scrive i file Parquet dei chunk sealed.</summary>
+    public string ParquetOutputPath { get; set; } = "./data/parquet";
+
+    // ── DataServer: archivio Parquet ──
+
+    /// <summary>Cartella dove il DataServer trova (e carica) i file Parquet per analisi offline.
+    /// Tipicamente i file vengono copiati qui dal DataService (NAS, sync, copia manuale).</summary>
+    public string ParquetArchivePath { get; set; } = "./data/archives";
+
+    // ── Retrocompatibilità ──
+
+    /// <summary>Alias per ParquetOutputPath (retrocompatibilità).</summary>
+    public string DiskPath { get => ParquetOutputPath; set => ParquetOutputPath = value; }
+
+    /// <summary>Alias per ParquetArchivePath (retrocompatibilità).</summary>
+    public string ArchivePath { get => ParquetArchivePath; set => ParquetArchivePath = value; }
+
     public string FileFormat { get; set; } = "Parquet";
 }
 

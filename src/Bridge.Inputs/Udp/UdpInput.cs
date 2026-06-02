@@ -217,6 +217,7 @@ public sealed class UdpInput : IDataInput
         var timestampUs = BitConverter.ToInt64(data, 8);
         var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampUs / 1000);
 
+        var sequence = BitConverter.ToUInt32(data, 16);
         var tagCount = BitConverter.ToUInt16(data, 20);
 
         // Resolve which DataSource this packet belongs to
@@ -293,7 +294,7 @@ public sealed class UdpInput : IDataInput
                     Kind = kind != DataKind.Telemetry ? kind : tag.Kind,
                     Value = value,
                     Timestamp = timestamp,
-                    MsgId = resolvedSource.NextMsgId()
+                    MsgId = sequence
                 };
                 OnValue?.Invoke(tv);
             }

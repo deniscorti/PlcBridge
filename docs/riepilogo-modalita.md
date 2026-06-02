@@ -60,7 +60,7 @@
 | **Input diretto** | No (by design) — non legge da driver hardware |
 | **Client WS upstream** | Si — `Sources[]` verso DataService o DataProvider |
 | **Buffer** | Si — ampio (es. 5 ore, chunk da 5 min = ~60 chunk) |
-| **Persistenza Parquet** | Si — il DataServer scrive Parquet (sempre abilitato) |
+| **Persistenza Parquet** | No — non scrive Parquet. Carica archivi Parquet prodotti dal DataService per analisi offline |
 | **Caricamento archivi** | Si — puo importare file Parquet come chunk `Loaded` |
 | **Server WS/REST** | Si — espone ai client finali (dashboard, app) |
 | **Ricezione UDP inter-bridge** | Si — `UdpReceiver` su porta unica, multi-source |
@@ -86,7 +86,7 @@
 |---|:---:|:---:|:---:|
 | Input diretto (ADS/UDP/Mock) | SI | SI | - |
 | Buffer in memoria (chunk) | - | SI | SI |
-| Persistenza Parquet (scrittura) | - | SI (opzionale) | SI (sempre) |
+| Persistenza Parquet (formato wide) | - | SI (opzionale) | - (carica, non scrive) |
 | Caricamento archivi Parquet | - | - | SI |
 | Connessione upstream WS | - | SI | SI |
 | Server WS (accetta client) | SI | SI | SI |

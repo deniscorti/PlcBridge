@@ -20,6 +20,7 @@ namespace Bridge.Contracts.Ws;
 [JsonDerivedType(typeof(WsAckAlarm), "ackAlarm")]
 [JsonDerivedType(typeof(WsReplay), "replay")]
 [JsonDerivedType(typeof(WsReplayStop), "replayStop")]
+[JsonDerivedType(typeof(WsChunkRequest), "chunkRequest")]
 public abstract record WsClientMessage
 {
     [JsonPropertyName("id")]
@@ -119,6 +120,12 @@ public sealed record WsReplay : WsClientMessage
 }
 
 public sealed record WsReplayStop : WsClientMessage;
+
+public sealed record WsChunkRequest : WsClientMessage
+{
+    public required string Source { get; init; }
+    public required string ChunkId { get; init; }
+}
 
 // ── Server → Client ──
 

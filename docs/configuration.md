@@ -2,9 +2,39 @@
 
 La configurazione è caricata da:
 1. `appsettings.json` (default committato)
-2. `appsettings.{Environment}.json`
+2. `appsettings.{Environment}.json` (es. `appsettings_DataProvider.json`)
 3. `appsettings.Local.json` (gitignorato, override locali)
 4. Variabili d'ambiente con prefisso `BRIDGE_`
+5. Argomento `--config <file>` per specificare un file custom
+
+## Porte e connessioni
+
+Ogni nodo Bridge è un **server HTTP/WS** (accetta connessioni) e opzionalmente un **client WS** (si collega a un nodo upstream). Ogni nodo deve avere una **porta diversa**:
+
+```
+DataProvider  :5080  ← solo server (legge da PLC, espone WS/REST)
+DataService   :5081  ← server + client WS verso DataProvider :5080
+DataServer    :5082  ← server + client WS verso DataService :5081
+Client web             client WS verso DataServer :5082
+```
+
+La porta è configurata in `Http.Port` e viene applicata automaticamente a Kestrel. Non serve specificarla altrove (launchSettings, env vars, ecc.) — il valore nel config ha la precedenza.
+
+Nella sezione `Sources[]` si configura la connessione **client** WS verso il nodo upstream:
+- `Url`: indirizzo WS del server a cui collegarsi (es. `ws://localhost:5081/ws`)
+- Il nodo remoto deve essere già in ascolto su quella porta
+
+```
+┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
+│  DataProvider     │       │  DataService      │       │  DataServer      │
+│  Http.Port: 5080  │◄──WS──│  Http.Port: 5081  │◄──WS──│  Http.Port: 5082 │◄──WS── Client
+│  Sources: []      │       │  Sources: [       │       │  Sources: [      │
+│                   │       │   Url: ws://:5080 │       │   Url: ws://:5081│
+│                   │       │  ]                │       │  ]               │
+└──────────────────┘       └──────────────────┘       └──────────────────┘
+```
+
+> **Importante**: se si lanciano più nodi sulla stessa macchina, ogni nodo DEVE avere una porta `Http.Port` diversa, altrimenti il bind fallisce.
 
 ---
 
@@ -103,9 +133,7 @@ Buffer in memoria + persistenza Parquet. Si connette al DataProvider (o legge di
       "InMemoryMinutes": 60,
       "ChunkDurationMin": 5,
       "PersistToDisk": true,
-      "DiskPath": "./data",
-      "ArchivePath": "./data/archives",
-      "FileFormat": "Parquet"
+      "ParquetOutputPath": "./data/parquet"    // dove il DataService scrive i Parquet
     },
     "CommandTimeoutMs": 5000,
     "HeartbeatIntervalMs": 10000,
@@ -202,8 +230,7 @@ Aggregatore. Si connette a uno o più DataService/DataProvider. Buffer grande, r
     "Buffer": {
       "InMemoryMinutes": 300,
       "ChunkDurationMin": 5,
-      "PersistToDisk": false,
-      "ArchivePath": "./data/archives"
+      "ParquetArchivePath": "./data/archives"  // dove il DataServer trova i Parquet da caricare
     },
     "CommandTimeoutMs": 10000,
     "HeartbeatIntervalMs": 10000,
@@ -256,7 +283,9 @@ Aggregatore. Si connette a uno o più DataService/DataProvider. Buffer grande, r
 
 **Note**:
 - Buffer a 300 minuti (5 ore) per storico più ampio
-- `PersistToDisk: false` — non produce Parquet, li carica dal DataService
+- Il DataServer non scrive Parquet — i chunk Full ricevuti via chunk transfer restano in memoria
+- `ParquetArchivePath` — cartella dove il DataServer trova i Parquet da caricare per analisi offline. I file vengono tipicamente copiati qui dal DataService (NAS condiviso, sync, copia manuale)
+- Caricamento via `/archives/load` (singolo file) o `/archives/load-range` (per intervallo temporale)
 - `ChunkSync: true` — abilita trasferimento chunk full in background
 - `ChunkSyncMaxBandwidthKbps` — limita la banda usata dal trasferimento background (i chunk immediate ignorano il limite)
 - Compressione Brotli + batch per connessione internet WS

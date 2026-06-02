@@ -2,11 +2,27 @@
   "profiles": {
     "Bridge.Host": {
       "commandName": "Project",
-      "launchBrowser": true,
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
-      },
-      "applicationUrl": "http://localhost:5080"
+      }
+    },
+    "DataProvider": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "DataProvider"
+      }
+    },
+    "DataService": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "DataService"
+      }
+    },
+    "DataServer": {
+      "commandName": "Project",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "DataServer"
+      }
     }
   }
 }

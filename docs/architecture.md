@@ -163,7 +163,15 @@ L'acknowledge può essere inviato dal client via WS (`ackAlarm`) o REST. L'ack v
 ## Modalità operative (RF-16)
 
 Il bridge supporta tre configurazioni distinte, combinabili in una topologia a cascata.
-Ogni nodo agisce come **server** (espone WS/REST). Il consumatore a valle si connette come client WS e si sottoscrive.
+Ogni nodo è contemporaneamente un **server** (espone WS/REST su `Http.Port`) e opzionalmente un **client** (si collega via WS a un nodo upstream tramite `Sources[].Url`). Ogni nodo deve avere una **porta diversa** (`Http.Port`) per evitare conflitti di bind.
+
+```
+DataProvider :5080  ← solo server (legge da PLC)
+DataService  :5081  ← server + client WS verso :5080
+DataServer   :5082  ← server + client WS verso :5081
+```
+
+Il consumatore a valle si connette come client WS e si sottoscrive.
 
 ```
   ADS/UDP          Bridge-1              Bridge-2                       Bridge-3             Client
@@ -408,21 +416,33 @@ Il client può sapere la qualità dei dati nelle risposte:
 ### Protocollo chunk transfer
 
 ```jsonc
-// DataService → DataServer (notifica chunk disponibile)
+// 1. DataService → tutti i client WS (notifica chunk disponibile, broadcast su OnChunkSealed)
 { "type": "chunkReady", "source": "linea1", "chunkId": "c-20260524-1000",
   "fromTs": "2026-05-24T10:00:00Z", "toTs": "2026-05-24T10:05:00Z",
-  "firstMsgId": 100000, "lastMsgId": 100120,
-  "sizeBytes": 52400, "records": 120 }
+  "firstMsgId": 100000, "lastMsgId": 100120, "records": 120 }
 
-// DataServer → DataService (richiesta trasferimento)
+// 2. DataServer → DataService (richiesta trasferimento — WS op message)
 { "op": "chunkRequest", "id": "cr1", "source": "linea1", "chunkId": "c-20260524-1000" }
 
-// DataService → DataServer (trasferimento chunk compresso come WS binary)
-{ "type": "chunkTransferStart", "source": "linea1", "chunkId": "c-20260524-1000",
-  "compressed": "brotli", "sizeCompressed": 8200, "sizeOriginal": 52400 }
-// ...frame binario con dati compressi...
-{ "type": "chunkTransferEnd", "source": "linea1", "chunkId": "c-20260524-1000", "ok": true }
+// 3. DataService → DataServer (risposta con tutti i record del chunk)
+{ "type": "response", "id": "cr1", "ok": true,
+  "chunkId": "c-20260524-1000", "source": "linea1",
+  "fromTs": "2026-05-24T10:00:00Z", "toTs": "2026-05-24T10:05:00Z",
+  "firstMsgId": 100000, "lastMsgId": 100120,
+  "records": [
+    { "source": "linea1", "tag": "temperature", "kind": "telemetry", "value": 23.4, "ts": "...", "msgId": 100000 },
+    { "source": "linea1", "tag": "pressure", "kind": "telemetry", "value": 1.02, "ts": "...", "msgId": 100001 },
+    ...
+  ]
+}
 ```
+
+**Flusso completo:**
+1. DataService: chunk sealed → flush Parquet (formato wide) + broadcast `chunkReady` a tutti i client WS
+2. DataServer: riceve `chunkReady` → accoda in ChunkTransferService (priorità: chunk recenti prima)
+3. DataServer → DataService: invia `chunkRequest` via WS
+4. DataService: legge il chunk sealed dal buffer → risponde con array `records[]`
+5. DataServer: deserializza i record → crea chunk Full → `ReplaceChunk` (Live→Full) → flush Parquet
 
 ### Compressione inter-bridge
 
@@ -570,10 +590,64 @@ La modifica prende effetto al prossimo seal del chunk attivo — il chunk corren
    - Dopo flush su Parquet avvenuto con successo (solo DataService, opzionale)
 ```
 
-## Persistenza su disco
+## Persistenza su disco — Formato Parquet Wide
 
-- **Flush Parquet** (solo DataService): quando un chunk viene sealed, viene scritto su file Parquet con nome `{source}_{data}_{ora}_{firstMsgId}.parquet`. Gli archivi vanno in cartella separata configurabile.
-- **Caricamento archivi** (solo DataServer): può caricare file Parquet (prodotti dal DataService) come chunk sealed in memoria (`Loaded`) per ricostruire lo storico.
+Il sistema salva i dati su disco in formato Parquet con schema **wide/pivoted**: un file separato per ogni combinazione di (source, DataKind, chunk), con i tag come colonne.
+
+### Naming dei file
+
+```
+{source}_{kind}_{fromTs}_{toTs}_{firstMsgId}_{lastMsgId}.parquet
+```
+
+Esempio:
+```
+linea1_telemetry_2026-06-02_10-00-00_2026-06-02_10-05-00_100000_100120.parquet
+linea1_event_2026-06-02_10-00-00_2026-06-02_10-05-00_100121_100125.parquet
+linea1_alarm_2026-06-02_10-00-00_2026-06-02_10-05-00_100126_100128.parquet
+```
+
+Dal nome si ricavano: source, tipo dato, intervallo temporale, range msgId — senza bisogno di aprire il file.
+
+### Schema Parquet (telemetria)
+
+```
+timestamp_us  (long)      — timestamp in microsecondi Unix UTC
+msg_id        (int)        — message ID
+temperature   (double?)    — valore tag (null = nessun dato per questo timestamp)
+pressure      (double?)    — valore tag
+flow_rate     (double?)    — ...
+```
+
+Ogni riga corrisponde a un timestamp+msgId. I tag senza valore per un dato timestamp hanno `null` — Parquet li comprime a quasi zero overhead. La compressione colonnare di Parquet è molto efficiente su colonne omogenee di double (delta encoding + ZSTD).
+
+### Vantaggi rispetto al formato long
+
+| Aspetto | Long format (vecchio) | Wide format (attuale) |
+|---------|----------------------|----------------------|
+| **Schema** | source, tag, kind, value_json, ts, msg_id | ts, msg_id, tag1, tag2, ... |
+| **Valori** | Serializzati come JSON string | Tipi nativi double |
+| **Compressione** | Scarsa (stringhe ripetute) | Ottima (colonne double omogenee) |
+| **Query per tag** | Scansione di tutte le righe | Column pruning: legge solo le colonne richieste |
+| **Separazione tipi** | Tutto mischiato in un file | Un file per DataKind → schema ottimale per tipo |
+
+### Chi scrive Parquet
+
+Solo il **DataService** (`PersistToDisk: true`): scrive quando un chunk viene sealed (evento `OnChunkSealed`). Un chunk da 5 minuti produce fino a 3 file (uno per kind presente: telemetry, event, alarm).
+
+Il **DataServer non scrive Parquet**. I dati Full ricevuti via chunk transfer restano in memoria. Per analisi offline, il DataServer carica i file Parquet prodotti dal DataService.
+
+### Caricamento archivi (DataServer)
+
+Il DataServer può caricare file Parquet come chunk `Loaded` in memoria:
+- **Per singolo file**: `POST /archives/load` con nome file e tag opzionali
+- **Per intervallo temporale**: `POST /archives/load-range` con source, kind, from, to — il sistema trova automaticamente i file Parquet che coprono l'intervallo richiesto e carica solo le colonne (tag) richieste
+
+Questo permette al DataServer di ricostruire lo storico per sessioni di analisi offline: il client chiede un intervallo, il DataServer carica i Parquet corrispondenti e li serve come chunk Loaded tramite le stesse API di query usate per i dati live.
+
+### Retrocompatibilità
+
+Il reader Parquet riconosce automaticamente il vecchio formato long (6 colonne: source, tag, kind, value_json, timestamp_us, msg_id) e lo legge correttamente. I nuovi file vengono scritti esclusivamente nel formato wide.
 
 ## Export dati
 
@@ -760,7 +834,7 @@ Fase 1 — Verticale base (DataProvider con MockInput) ✅ COMPLETATA
 
 Fase 2 — DataService ✅ COMPLETATA
 ├── Core: Chunk, ChunkedRingBuffer, seal, eviction
-├── Storage: flush Parquet, export CSV
+├── Storage: flush Parquet (formato wide, un file per source+kind+chunk), export CSV
 ├── InterBridge: WsClient (connessione al DataProvider)
 ├── Host: query temporali (queryTelemetry/Events/Alarms)
 ├── Host: comandi bridge (start/stop/archive/clear)

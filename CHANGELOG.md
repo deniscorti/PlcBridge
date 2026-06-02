@@ -93,6 +93,23 @@ e il versionamento [SemVer](https://semver.org/lang/it/).
 - Lista test suggeriti per produzione con priorità
 - Scenario end-to-end a 3 livelli (DataProvider→DataService→DataServer→Vue client)
 
+### Changed — Parquet Wide Format + Chunk Transfer Completo
+- ParquetStorage: riscritta con formato wide/pivoted — un file per (source, DataKind, chunk), tag come colonne double nullable
+- Naming file Parquet: `{source}_{kind}_{fromTs}_{toTs}_{firstMsgId}_{lastMsgId}.parquet` — metadati leggibili dal nome
+- ReadFileAsync: supporta lettura selettiva per tag e intervallo temporale (column pruning)
+- Retrocompatibilità: il reader riconosce automaticamente il vecchio formato long
+- WsHandler: aggiunto handler `chunkRequest` — il DataService risponde con tutti i record del chunk sealed
+- WsMessages: aggiunto `WsChunkRequest` al protocollo polimorfio
+- ChunkTransferService: il chunk Full viene ora popolato con i dati ricevuti dalla risposta WS (prima era vuoto)
+- ChunkTransferService: aggiunto evento `OnChunkTransferred` per trigger flush Parquet
+- Program.cs: `OnChunkSealed` ora fa broadcast `chunkReady` a tutti i client WS (notifica inter-bridge)
+- Program.cs: wiring `OnChunkTransferred` → flush Parquet per chunk Full nel DataServer
+- WsConnectionManager: aggiunto `BroadcastAsync` per invio a tutte le connessioni
+- Chunk: aggiunto `GetValuesByKind(DataKind)` per accesso per tipo senza filtro tag/tempo
+- ArchiveEndpoints: `/archives` arricchito con metadati parsed (source, kind, fromTs, toTs, msgId range)
+- ArchiveEndpoints: nuovo endpoint `POST /archives/load-range` per caricamento archivi per intervallo temporale con filtro kind/tags
+- DataServer non scrive Parquet: i chunk Full ricevuti via chunk transfer restano in memoria; per analisi offline carica Parquet prodotti dal DataService
+
 ### Added — Input Extensibility
 - IDataInput arricchito: Protocol (string), Capabilities (flag enum), OnConnectionChanged event
 - InputCapabilities: Receive, Read, Write, Subscribe, BatchRead, Browse

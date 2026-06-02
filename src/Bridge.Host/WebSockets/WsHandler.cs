@@ -150,6 +150,10 @@ public static class WsHandler
                 await HandleAckAlarmAsync(connId, ack, connMgr, srcMgr, ct);
                 break;
 
+            case WsChunkRequest cr:
+                await HandleChunkRequestAsync(connId, cr, connMgr, bufMgr, ct);
+                break;
+
             default:
                 await connMgr.SendAsync(connId, new WsError { Id = msg.Id, Code = "UNSUPPORTED_OP", Message = "Not supported in current mode." }, ct);
                 break;
@@ -442,6 +446,63 @@ public static class WsHandler
         {
             await connMgr.SendAsync(connId, new WsError { Id = write.Id, Code = "WRITE_FAILED", Message = ex.Message }, ct);
         }
+    }
+
+    private static async Task HandleChunkRequestAsync(string connId, WsChunkRequest req,
+        WsConnectionManager connMgr, BufferManager? bufMgr, CancellationToken ct)
+    {
+        if (bufMgr is null)
+        {
+            await connMgr.SendAsync(connId, new WsError { Id = req.Id, Code = "NO_BUFFER", Message = "Buffer not available." }, ct);
+            return;
+        }
+
+        var buf = bufMgr.GetBuffer(req.Source);
+        if (buf is null)
+        {
+            await connMgr.SendAsync(connId, new WsError { Id = req.Id, Code = "SOURCE_NOT_FOUND", Message = $"Source '{req.Source}' not found." }, ct);
+            return;
+        }
+
+        var sealed_ = buf.GetSealedChunks();
+        var chunk = sealed_.FirstOrDefault(c => c.ChunkId == req.ChunkId);
+
+        if (chunk is null)
+        {
+            await connMgr.SendAsync(connId, new WsResponse
+            {
+                Id = req.Id, Ok = false,
+                Error = "CHUNK_NOT_FOUND",
+                Message = $"Chunk '{req.ChunkId}' not found or not sealed."
+            }, ct);
+            return;
+        }
+
+        var allValues = chunk.GetAllValues();
+        var records = allValues.Select(v => new
+        {
+            source = v.Source,
+            tag = v.Tag,
+            kind = v.Kind.ToString().ToLowerInvariant(),
+            value = v.Value,
+            ts = v.Timestamp,
+            msgId = v.MsgId
+        }).ToList();
+
+        await connMgr.SendAsync(connId, new WsResponse
+        {
+            Id = req.Id, Ok = true,
+            Extra = new Dictionary<string, object?>
+            {
+                ["chunkId"] = chunk.ChunkId,
+                ["source"] = chunk.Source,
+                ["fromTs"] = chunk.FromTs,
+                ["toTs"] = chunk.ToTs,
+                ["firstMsgId"] = chunk.FirstMsgId,
+                ["lastMsgId"] = chunk.LastMsgId,
+                ["records"] = records
+            }
+        }, ct);
     }
 
     private static async Task HandleGetSourcesAsync(string connId, WsGetSources msg,

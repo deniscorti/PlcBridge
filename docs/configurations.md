@@ -5,6 +5,18 @@ Questa guida elenca tutte le possibili configurazioni per i tre modi operativi:
 
 Ogni sezione mostra le combinazioni di input/output supportate con il relativo `appsettings.json`.
 
+## Porte: regola fondamentale
+
+Ogni nodo è un **server HTTP/WS** su una porta propria. Se si eseguono più nodi sulla stessa macchina, ognuno **deve avere una porta `Http.Port` diversa**:
+
+| Nodo | Porta tipica | Ruolo server | Connessione client |
+|------|-------------|--------------|-------------------|
+| DataProvider | 5080 | Accetta client WS/REST | Nessuna (solo server) |
+| DataService | 5081 | Accetta client WS/REST | Si collega al DataProvider su :5080 |
+| DataServer | 5082 | Accetta client WS/REST | Si collega al DataService su :5081 |
+
+La porta configurata in `Http.Port` viene applicata direttamente a Kestrel. `Sources[].Url` specifica a **quale nodo upstream collegarsi** come client WS.
+
 ---
 
 ## Indice
@@ -198,8 +210,7 @@ Lettura diretta dal PLC con buffer e salvataggio su disco.
       "InMemoryMinutes": 60,
       "ChunkDurationMin": 5,
       "PersistToDisk": true,
-      "DiskPath": "./data",
-      "ArchivePath": "./data/archives"
+      "ParquetOutputPath": "./data/parquet"
     },
     "DataSources": [
       {
@@ -236,7 +247,8 @@ Lettura diretta dal PLC con buffer e salvataggio su disco.
     "Buffer": {
       "InMemoryMinutes": 60,
       "ChunkDurationMin": 5,
-      "PersistToDisk": true
+      "PersistToDisk": true,
+      "ParquetOutputPath": "./data/parquet"
     },
     "DataSources": [
       {
@@ -278,8 +290,7 @@ Il DataService riceve dal simulatore UDP, mantiene una finestra rolling in memor
       "ChunkDurationMin": 5,
       "PersistToDisk": true,
       "ReadFromDisk": false,
-      "DiskPath": "./data",
-      "ArchivePath": "./data/archives"
+      "ParquetOutputPath": "./data/parquet"
     },
     "DataSources": [
       {
@@ -338,7 +349,8 @@ Come S2b ma con `AutoDiscovery: true`: il simulatore UDP invia un pacchetto di m
       "InMemoryMinutes": 60,
       "ChunkDurationMin": 5,
       "PersistToDisk": true,
-      "ReadFromDisk": false
+      "ReadFromDisk": false,
+      "ParquetOutputPath": "./data/parquet"
     },
     "DataSources": [
       {
@@ -403,7 +415,8 @@ Il DataService si collega come client WS a un DataProvider remoto.
     "Buffer": {
       "InMemoryMinutes": 60,
       "ChunkDurationMin": 5,
-      "PersistToDisk": true
+      "PersistToDisk": true,
+      "ParquetOutputPath": "./data/parquet"
     },
     "Sources": [
       {
@@ -440,7 +453,8 @@ Il DataService riceve dati via WS e li inoltra anche via UDP (best-effort, bassa
     "Buffer": {
       "InMemoryMinutes": 60,
       "ChunkDurationMin": 5,
-      "PersistToDisk": true
+      "PersistToDisk": true,
+      "ParquetOutputPath": "./data/parquet"
     },
     "Sources": [
       {
@@ -489,7 +503,8 @@ Un DataService che gestisce sia un input diretto che un upstream.
     "Buffer": {
       "InMemoryMinutes": 60,
       "ChunkDurationMin": 5,
-      "PersistToDisk": true
+      "PersistToDisk": true,
+      "ParquetOutputPath": "./data/parquet"
     },
     "DataSources": [
       {
@@ -531,7 +546,7 @@ PLC remoto ──► Provider ──WS──┘
 
 ## DataServer
 
-Il DataServer è lo storicizzatore finale. Si collega come client a uno o più DataService/DataProvider, riceve dati via WS e/o UDP, gestisce buffer ampi e supporta replay. **Non persiste su disco** (carica archivi Parquet da importare).
+Il DataServer è lo storicizzatore finale. Si collega come client a uno o più DataService/DataProvider, riceve dati via WS e/o UDP, gestisce buffer ampi e supporta replay. **Non scrive Parquet** — i dati Full ricevuti via chunk transfer restano in memoria. Può **caricare** archivi Parquet (formato wide) prodotti dal DataService per analisi offline.
 
 ### V1 — Da DataService via WebSocket
 
@@ -544,7 +559,8 @@ Configurazione base: il DataServer riceve tutto via WebSocket.
     "Http": { "Port": 5082 },
     "Buffer": {
       "InMemoryMinutes": 300,
-      "ChunkDurationMin": 5
+      "ChunkDurationMin": 5,
+      "ParquetArchivePath": "./data/archives"
     },
     "SelectiveSubscription": true,
     "BackfillMinutes": 10,
@@ -580,7 +596,8 @@ Doppio canale: WS per affidabilità e chunk transfer, UDP per bassa latenza. Il 
     "Http": { "Port": 5082 },
     "Buffer": {
       "InMemoryMinutes": 300,
-      "ChunkDurationMin": 5
+      "ChunkDurationMin": 5,
+      "ParquetArchivePath": "./data/archives"
     },
     "SelectiveSubscription": true,
     "BackfillMinutes": 10,
@@ -623,7 +640,8 @@ Un DataServer centralizzato che aggrega più linee produttive.
     "Http": { "Port": 5082 },
     "Buffer": {
       "InMemoryMinutes": 300,
-      "ChunkDurationMin": 5
+      "ChunkDurationMin": 5,
+      "ParquetArchivePath": "./data/archives"
     },
     "SelectiveSubscription": true,
     "BackfillMinutes": 10,
@@ -684,7 +702,8 @@ Per scenari semplici dove non serve persistenza intermedia. Il DataServer si col
     "Http": { "Port": 5082 },
     "Buffer": {
       "InMemoryMinutes": 300,
-      "ChunkDurationMin": 5
+      "ChunkDurationMin": 5,
+      "ParquetArchivePath": "./data/archives"
     },
     "SelectiveSubscription": true,
     "Sources": [
@@ -784,7 +803,7 @@ PLC ──ADS──► DataProvider ──WS/REST──► Client
 |-------------------------------|:---:|:---:|:---:|
 | Input diretto (ADS/UDP/Mock)  | ✅  | ✅  | ❌  |
 | Buffer in memoria             | ❌  | ✅  | ✅  |
-| Persistenza Parquet           | ❌  | ✅  | ❌  |
+| Persistenza Parquet (wide)    | ❌  | ✅  | ❌  |
 | Caricamento archivi           | ❌  | ❌  | ✅  |
 | Client WS upstream            | ❌  | ✅  | ✅  |
 | Invio UDP stream              | ❌  | ✅  | ❌  |

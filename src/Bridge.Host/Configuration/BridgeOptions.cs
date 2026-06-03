@@ -6,7 +6,6 @@ public sealed class BridgeOptions
 {
     public const string SectionName = "Bridge";
 
-    public BridgeMode Mode { get; set; } = BridgeMode.DataProvider;
     public HttpOptions Http { get; set; } = new();
     public WebSocketOptions WebSocket { get; set; } = new();
     public AuthOptions Auth { get; set; } = new();
@@ -20,6 +19,9 @@ public sealed class BridgeOptions
     public int BackfillMinutes { get; set; } = 10;
     public List<UdpDestinationOptions> UdpDestinations { get; set; } = [];
     public UdpReceiverOptions? UdpReceiver { get; set; }
+
+    // Kept for backward compatibility with old configs that set "Mode"
+    public string? Mode { get; set; }
 }
 
 public sealed class HttpOptions
@@ -47,6 +49,7 @@ public sealed class AuthOptions
 
 public sealed class DataSourceOptions
 {
+    public bool Enabled { get; set; } = true;
     public required string Id { get; set; }
     public List<InputOptions> Inputs { get; set; } = [];
 }
@@ -75,6 +78,7 @@ public sealed class TagOptions
 
 public sealed class BufferOptions
 {
+    public bool Enabled { get; set; } = true;
     public int InMemoryMinutes { get; set; } = 60;
     public int ChunkDurationMin { get; set; } = 5;
 
@@ -105,11 +109,17 @@ public sealed class BufferOptions
 
 public sealed class SourceConnectionOptions
 {
+    public bool Enabled { get; set; } = true;
     public required string Id { get; set; }
-    public required string DataSource { get; set; }
     public required string Url { get; set; }
     public string? ApiKey { get; set; }
-    public string SubscribeTags { get; set; } = "ALL";
+
+    /// <summary>When true, discover all tags from the upstream node automatically (ignores Tags).</summary>
+    public bool AutoDiscovery { get; set; } = true;
+
+    /// <summary>Explicit list of tags to subscribe. Ignored when AutoDiscovery is true.</summary>
+    public string[] Tags { get; set; } = [];
+
     public int ForwardIntervalMs { get; set; } = 2000;
     public string Compression { get; set; } = "none";
     public bool BatchMode { get; set; }
@@ -130,12 +140,12 @@ public sealed class UdpDestinationOptions
 
 public sealed class UdpReceiverOptions
 {
-    public int ListenPort { get; set; } = 9200;
-    public UdpReceiverSourceOptions[] Sources { get; set; } = [];
-}
-
-public sealed class UdpReceiverSourceOptions
-{
-    public required string DataSource { get; set; }
     public bool Enabled { get; set; } = true;
+    public int ListenPort { get; set; } = 9200;
+
+    /// <summary>When true, accept any source from the UDP stream automatically (ignores Tags).</summary>
+    public bool AutoDiscovery { get; set; } = true;
+
+    /// <summary>Explicit list of tags to accept. Ignored when AutoDiscovery is true.</summary>
+    public string[] Tags { get; set; } = [];
 }

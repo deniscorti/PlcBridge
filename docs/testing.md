@@ -251,18 +251,17 @@ npm run build
 
 ## Scenario di test end-to-end
 
-Catena completa con tutti e tre i livelli operativi:
+Catena completa con tutti e tre i livelli operativi. Ogni nodo è un progetto separato con la propria configurazione:
 
 ```bash
 # 1. DataProvider (porta 5080, MockInput)
-cd src/Bridge.Host
-BRIDGE__Mode=DataProvider BRIDGE__Http__Port=5080 dotnet run
+dotnet run --project src/Bridge.DataProvider
 
-# 2. DataService (porta 5081, si connette al DataProvider)
-BRIDGE__Mode=DataService BRIDGE__Http__Port=5081 dotnet run
+# 2. DataService (porta 5081, si collega al DataProvider :5080)
+dotnet run --project src/Bridge.DataService
 
-# 3. DataServer (porta 5082, si connette al DataService)
-BRIDGE__Mode=DataServer BRIDGE__Http__Port=5082 dotnet run
+# 3. DataServer (porta 5082, si collega al DataService :5081)
+dotnet run --project src/Bridge.DataServer
 
 # 4. Client Vue 3 (porta 3000, proxy verso DataServer)
 cd clients/web
@@ -271,6 +270,9 @@ VITE_BRIDGE_WS_URL=ws://localhost:5082/ws npm run dev
 # 5. (opzionale) UDP Simulator verso DataProvider
 dotnet run --project tools/Bridge.Tools.UdpSimulator -- 127.0.0.1 9100 100 20
 ```
+
+> **Nota**: ogni nodo ha la propria porta configurata nel suo `appsettings.json`:
+> DataProvider=5080, DataService=5081, DataServer=5082.
 
 ### Verifiche
 

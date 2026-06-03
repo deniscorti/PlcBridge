@@ -187,7 +187,7 @@ public sealed class UdpInput : IDataInput
     ///     [1] version
     ///     [1] flags (bits 0-1: kind)
     ///     [4] sourceId (CRC32)
-    ///     [8] timestamp (unix microseconds)
+    ///     [8] timestamp (unix milliseconds)
     ///     [4] sequence number
     ///     [2] tag count
     ///   Per tag (9 bytes for float32):
@@ -214,8 +214,8 @@ public sealed class UdpInput : IDataInput
 
         var packetSourceId = BitConverter.ToUInt32(data, 4);
 
-        var timestampUs = BitConverter.ToInt64(data, 8);
-        var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampUs / 1000);
+        var timestampMs = BitConverter.ToInt64(data, 8);
+        var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampMs);
 
         var sequence = BitConverter.ToUInt32(data, 16);
         var tagCount = BitConverter.ToUInt16(data, 20);

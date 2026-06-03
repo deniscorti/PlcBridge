@@ -8,7 +8,7 @@
 
 | Aspetto | Dettaglio |
 |---------|-----------|
-| **Input** | ADS, UDP (custom-v1), Mock — anche combinati nello stesso DataSource |
+| **Input** | ADS, UDP (custom-v1), Mock — anche combinati nella stessa source |
 | **Buffer** | Nessuno — i dati non vengono accumulati in memoria |
 | **Persistenza** | Nessuna |
 | **Server WS/REST** | Si — accetta client WS e richieste REST |
@@ -33,7 +33,7 @@
 |---------|-----------|
 | **Input diretto** | Si — ADS, UDP, Mock (stessi del DataProvider) tramite `DataSources[]` |
 | **Client WS upstream** | Si — si collega a DataProvider o altri bridge tramite `Sources[]` |
-| **Entrambi insieme** | Si — alcuni DataSource da input diretto, altri da upstream WS |
+| **Entrambi insieme** | Si — alcune source da input diretto, altre da upstream WS |
 | **Buffer** | Si — ChunkedRingBuffer (configurabile, es. 60 min, chunk da 5 min) |
 | **Persistenza** | Si — Parquet su chunk sealed (se `PersistToDisk: true`) |
 | **Server WS/REST** | Si — accetta client finali e bridge downstream |
@@ -60,7 +60,7 @@
 | **Input diretto** | No (by design) — non legge da driver hardware |
 | **Client WS upstream** | Si — `Sources[]` verso DataService o DataProvider |
 | **Buffer** | Si — ampio (es. 5 ore, chunk da 5 min = ~60 chunk) |
-| **Persistenza Parquet** | No — non scrive Parquet. Carica archivi Parquet prodotti dal DataService per analisi offline |
+| **Persistenza Parquet** | Si — salva automaticamente i chunk ricevuti via chunk transfer in `ParquetArchivePath`. Puo' anche caricare archivi Parquet aggiuntivi per analisi offline |
 | **Caricamento archivi** | Si — puo importare file Parquet come chunk `Loaded` |
 | **Server WS/REST** | Si — espone ai client finali (dashboard, app) |
 | **Ricezione UDP inter-bridge** | Si — `UdpReceiver` su porta unica, multi-source |
@@ -86,7 +86,7 @@
 |---|:---:|:---:|:---:|
 | Input diretto (ADS/UDP/Mock) | SI | SI | - |
 | Buffer in memoria (chunk) | - | SI | SI |
-| Persistenza Parquet (formato wide) | - | SI (opzionale) | - (carica, non scrive) |
+| Persistenza Parquet (formato wide) | - | SI (opzionale) | SI (archivio chunk ricevuti + caricamento) |
 | Caricamento archivi Parquet | - | - | SI |
 | Connessione upstream WS | - | SI | SI |
 | Server WS (accetta client) | SI | SI | SI |
@@ -225,7 +225,7 @@ Ci sono **3 tipi di comunicazione** nel sistema, di cui 2 usano UDP ma con scopi
 | **Configurazione** | `"Type": "Udp", "ListenPort": 9100, "AutoDiscovery": true` |
 
 Questo e lo stesso tipo di input dell'ADS: il bridge lo usa per **acquisire** dati dalla sorgente.
-Supporta AutoDiscovery (metadata periodico dal simulatore) e puo coesistere con ADS nello stesso DataSource.
+Supporta AutoDiscovery (metadata periodico dal simulatore) e puo coesistere con ADS nella stessa source.
 
 ### 2. UDP Inter-Bridge — stream live tra nodi bridge (DataService --> DataServer)
 
@@ -276,14 +276,16 @@ Client finale                 -                     -                   CLIENT
 
 ---
 
-## Note sul codice vs design
+## Struttura progetti
 
-Dall'analisi del codice (`Program.cs`), alcune restrizioni della tabella sono **by design** ma **non enforce nel codice**:
+Ogni modalità è un **progetto separato** con il proprio `Program.cs` e `appsettings.json`:
 
-| Feature | Design | Codice |
-|---------|--------|--------|
-| DataProvider con `Sources[]` (client WS upstream) | Non previsto | Non bloccato — funzionerebbe |
-| DataServer con `DataSources[].Inputs[]` (input diretto) | Non previsto | Non bloccato — funzionerebbe |
-| DataProvider con `UdpDestinations[]` (invio UDP) | Non previsto | Non bloccato — funzionerebbe |
+```
+src/Bridge.DataProvider/   → dotnet run --project src/Bridge.DataProvider
+src/Bridge.DataService/    → dotnet run --project src/Bridge.DataService
+src/Bridge.DataServer/     → dotnet run --project src/Bridge.DataServer
+```
 
-Queste combinazioni non sono testate ne documentate. Potrebbero funzionare ma non sono garantite. Se servissero, il DataService copre gia tutti questi scenari.
+Condividono il codice tramite `Bridge.Host` (libreria: endpoints, WS, auth, config) e le altre librerie (Core, Inputs, Storage, InterBridge, Contracts).
+
+Ogni `appsettings.json` contiene **tutte le sezioni possibili** con flag `Enabled` (true/false) per attivare/disattivare ogni funzionalità. Questo rende visibili tutte le opzioni senza cercare nella documentazione.

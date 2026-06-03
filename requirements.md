@@ -42,6 +42,11 @@ Bridge è un servizio che fa da ponte tra uno o più PLC industriali e i sistemi
 | RF-19 | In futuro il Bridge 3 deve poter recuperare dati dal 2 in caso vengano usati tramite internet, preparare la struttura per aggiungere id ai vari messaggi inviati da 1 a 2 oppure letti direttamente da 2, potrebbe aiutare in futuro per implementare questo punto.
 		I dati possono essere recuperati solamente se presenti nel buffer circolare, non considerare i parquet come fonte per il recupero
 
+|RF-20| Il DataProvider salva row data di come li riceve, nel caso udp puo' salvare un file aggiornato ogni x secondi e di durata massima Y dei messaggi esattamente come li riceve
+		NEl caso di ADS vedere come e' meglio salvarli (immagino debba generare un id visto che non ne abbiamo mai parlato da usare anche per il flusso normale)
+		Questi file sono di backup per recupero di tutto, quindi da prevedere un tool per creare i parquet per dataSErver da questi singoli file, con nome simile al template usato per i parquet 
+		
+
 ## 3. Requisiti non funzionali
 | ID     | Requisito |
 |--------|-----------|

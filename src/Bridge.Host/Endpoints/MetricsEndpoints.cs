@@ -62,7 +62,7 @@ public static class MetricsEndpoints
             return Results.Ok(new
             {
                 uptime,
-                mode = opts.Value.Mode.ToString(),
+                mode = opts.Value.Mode ?? "Unknown",
                 sources,
                 buffer,
                 chunkSync,
@@ -77,7 +77,7 @@ public static class MetricsEndpoints
         {
             return Results.Ok(new
             {
-                mode = opts.Value.Mode.ToString(),
+                mode = opts.Value.Mode ?? "Unknown",
                 chunkDurationMin = bufMgr?.ChunkDurationMin,
                 inMemoryMinutes = bufMgr?.InMemoryMinutes,
                 persistToDisk = opts.Value.Buffer.PersistToDisk

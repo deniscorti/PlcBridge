@@ -23,6 +23,7 @@ public sealed class BridgeWsClient : IAsyncDisposable
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingRequests = new();
 
     public string SourceId { get; }
+    public string Url => _opts.Url;
     public bool IsConnected => _ws?.State == WebSocketState.Open;
 
     /// <summary>Fired when a tag value arrives from the upstream bridge.</summary>
@@ -44,7 +45,7 @@ public sealed class BridgeWsClient : IAsyncDisposable
     {
         _opts = opts;
         _logger = logger;
-        SourceId = opts.DataSource;
+        SourceId = opts.Id;
     }
 
     public async Task ConnectAsync(CancellationToken ct = default)
@@ -71,10 +72,11 @@ public sealed class BridgeWsClient : IAsyncDisposable
     }
 
     /// <summary>Send a command to the upstream bridge and wait for response.</summary>
-    public async Task<JsonElement> SendCommandAsync(string command, JsonElement? parameters = null, int timeoutMs = 5000)
+    public async Task<JsonElement> SendCommandAsync(string command, string? source = null, JsonElement? parameters = null, int timeoutMs = 5000)
     {
         var id = $"cmd-{Interlocked.Increment(ref _msgId)}";
-        var msg = new Dictionary<string, object?> { ["op"] = "sourceCommand", ["id"] = id, ["source"] = SourceId, ["command"] = command };
+        var msg = new Dictionary<string, object?> { ["op"] = "sourceCommand", ["id"] = id, ["command"] = command };
+        if (source is not null) msg["source"] = source;
         if (parameters is not null) msg["params"] = parameters;
 
         var tcs = new TaskCompletionSource<JsonElement>();
@@ -94,10 +96,11 @@ public sealed class BridgeWsClient : IAsyncDisposable
     }
 
     /// <summary>Request a chunk transfer from upstream (DataServer→DataService).</summary>
-    public async Task<JsonElement> RequestChunkAsync(string chunkId, int timeoutMs = 30000)
+    public async Task<JsonElement> RequestChunkAsync(string chunkId, string? source = null, int timeoutMs = 30000)
     {
         var id = $"cr-{Interlocked.Increment(ref _msgId)}";
-        var msg = new Dictionary<string, object?> { ["op"] = "chunkRequest", ["id"] = id, ["source"] = SourceId, ["chunkId"] = chunkId };
+        var msg = new Dictionary<string, object?> { ["op"] = "chunkRequest", ["id"] = id, ["chunkId"] = chunkId };
+        if (source is not null) msg["source"] = source;
 
         var tcs = new TaskCompletionSource<JsonElement>();
         _pendingRequests[id] = tcs;
@@ -116,16 +119,18 @@ public sealed class BridgeWsClient : IAsyncDisposable
     }
 
     /// <summary>Subscribe to additional tags on the upstream bridge (incremental).</summary>
-    public async Task SubscribeTagsAsync(IReadOnlyList<string> tags)
+    /// <param name="tags">Tags to subscribe.</param>
+    /// <param name="source">Source name on the upstream (discovered via getSources). If null, omitted from the message.</param>
+    public async Task SubscribeTagsAsync(IReadOnlyList<string> tags, string? source = null)
     {
         if (!IsConnected || tags.Count == 0) return;
         var msg = new Dictionary<string, object?>
         {
             ["op"] = "subscribe",
             ["id"] = $"sub-{Interlocked.Increment(ref _msgId)}",
-            ["source"] = _opts.DataSource,
             ["tags"] = tags
         };
+        if (source is not null) msg["source"] = source;
         if (_opts.DownsampleMs > 0) msg["downsampleMs"] = _opts.DownsampleMs;
         if (_opts.Compression != "none") msg["compression"] = _opts.Compression;
         if (_opts.BatchMode) msg["batchMode"] = true;
@@ -135,33 +140,33 @@ public sealed class BridgeWsClient : IAsyncDisposable
     }
 
     /// <summary>Unsubscribe from specific tags on the upstream bridge.</summary>
-    public async Task UnsubscribeTagsAsync(IReadOnlyList<string> tags)
+    public async Task UnsubscribeTagsAsync(IReadOnlyList<string> tags, string? source = null)
     {
         if (!IsConnected || tags.Count == 0) return;
         var msg = new Dictionary<string, object?>
         {
             ["op"] = "unsubscribe",
             ["id"] = $"unsub-{Interlocked.Increment(ref _msgId)}",
-            ["source"] = _opts.DataSource,
             ["tags"] = tags
         };
+        if (source is not null) msg["source"] = source;
         await SendJsonAsync(msg);
     }
 
     /// <summary>Query recent telemetry from upstream for backfill. Returns the raw response.</summary>
-    public async Task<JsonElement> QueryTelemetryAsync(string[] tags, DateTimeOffset from, DateTimeOffset to, int limit = 3000, int timeoutMs = 10000)
+    public async Task<JsonElement> QueryTelemetryAsync(string[] tags, DateTimeOffset from, DateTimeOffset to, string? source = null, int limit = 3000, int timeoutMs = 10000)
     {
         var id = $"qt-{Interlocked.Increment(ref _msgId)}";
         var msg = new Dictionary<string, object?>
         {
             ["op"] = "queryTelemetry",
             ["id"] = id,
-            ["source"] = _opts.DataSource,
             ["tags"] = tags,
             ["from"] = from,
             ["to"] = to,
             ["limit"] = limit
         };
+        if (source is not null) msg["source"] = source;
 
         var tcs = new TaskCompletionSource<JsonElement>();
         _pendingRequests[id] = tcs;
@@ -250,7 +255,6 @@ public sealed class BridgeWsClient : IAsyncDisposable
                 {
                     ["op"] = "subscribe",
                     ["id"] = $"sub-{Interlocked.Increment(ref _msgId)}",
-                    ["source"] = _opts.DataSource,
                     ["tags"] = Array.Empty<string>(), // no live tags
                     ["chunkSync"] = true
                 };
@@ -262,13 +266,13 @@ public sealed class BridgeWsClient : IAsyncDisposable
         }
         else
         {
-            // Legacy mode: subscribe to all configured tags immediately
+            // Legacy mode: subscribe to configured tags (or ALL if AutoDiscovery)
+            // source omitted = subscribe to all sources on the upstream
             var subMsg = new Dictionary<string, object?>
             {
                 ["op"] = "subscribe",
                 ["id"] = $"sub-{Interlocked.Increment(ref _msgId)}",
-                ["source"] = _opts.DataSource,
-                ["tags"] = _opts.SubscribeTags == "ALL" ? new[] { "ALL" } : _opts.SubscribeTags.Split(',')
+                ["tags"] = _opts.AutoDiscovery ? new[] { "ALL" } : _opts.Tags
             };
             if (_opts.DownsampleMs > 0) subMsg["downsampleMs"] = _opts.DownsampleMs;
             if (_opts.Compression != "none") subMsg["compression"] = _opts.Compression;
@@ -448,10 +452,15 @@ public sealed class BridgeWsClient : IAsyncDisposable
 public sealed class BridgeWsClientOptions
 {
     public required string Id { get; init; }
-    public required string DataSource { get; init; }
     public required string Url { get; init; }
     public string? ApiKey { get; init; }
-    public string SubscribeTags { get; init; } = "ALL";
+
+    /// <summary>When true, discover all tags from the upstream node (ignores Tags).</summary>
+    public bool AutoDiscovery { get; init; } = true;
+
+    /// <summary>Explicit list of tags to subscribe. Ignored when AutoDiscovery is true.</summary>
+    public string[] Tags { get; init; } = [];
+
     public int DownsampleMs { get; init; }
     public string Compression { get; init; } = "none";
     public bool BatchMode { get; init; }

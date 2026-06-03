@@ -20,9 +20,15 @@ public sealed class UdpBridgeSender : IDisposable
     private readonly ILogger _logger;
     private readonly int _maxPacketBytes;
     private ushort _groupSeq;
+    private CancellationTokenSource? _mappingCts;
+    private Task? _mappingTask;
+    private Func<IReadOnlyDictionary<string, Tag>>? _tagsProvider;
 
     public string DestinationId { get; }
     public bool Enabled { get; set; }
+
+    /// <summary>Interval between periodic mapping packets.</summary>
+    public int MappingIntervalMs { get; set; } = 10_000;
 
     public UdpBridgeSender(string destinationId, string host, int port, string sourceId,
         int maxPacketBytes, bool enabled, ILogger logger)
@@ -36,12 +42,142 @@ public sealed class UdpBridgeSender : IDisposable
         _logger = logger;
     }
 
+    /// <summary>
+    /// Start periodic mapping broadcast. The tagsProvider returns the current tags for this source.
+    /// Call this after the source tags are known (or will be discovered dynamically).
+    /// Sends an initial mapping immediately, then repeats every MappingIntervalMs.
+    /// </summary>
+    public void StartMappingBroadcast(Func<IReadOnlyDictionary<string, Tag>> tagsProvider)
+    {
+        _tagsProvider = tagsProvider;
+        _mappingCts = new CancellationTokenSource();
+        _mappingTask = MappingLoopAsync(_mappingCts.Token);
+    }
+
+    /// <summary>
+    /// Send mapping packets: source name + tag CRC→name pairs.
+    /// Each packet carries: [packetIdx:1][packetTotal:1][sourceNameLen:2][sourceName:N][tagCount:2][crc:4][nameLen:2][name:N]...
+    /// tagCount is the number of tags in THIS packet.
+    /// The receiver collects all packetTotal packets (matched by header GroupSeq), orders by packetIdx, then processes.
+    /// </summary>
+    public async Task SendMappingAsync()
+    {
+        if (!Enabled || _tagsProvider is null) return;
+
+        var tags = _tagsProvider();
+        var sourceNameBytes = System.Text.Encoding.UTF8.GetBytes(_sourceIdStr);
+
+        // Pre-encode all tag entries
+        var tagEntries = new List<(uint crc, byte[] nameBytes)>();
+        foreach (var (name, _) in tags)
+        {
+            var nameBytes = System.Text.Encoding.UTF8.GetBytes(name);
+            tagEntries.Add((Crc32.Compute(name), nameBytes));
+        }
+
+        // Per-packet overhead: packetIdx(1) + packetTotal(1) + sourceNameLen(2) + sourceName(N) + tagCount(2)
+        var headerOverhead = 1 + 1 + 2 + sourceNameBytes.Length + 2;
+
+        // Split tag entries into packets that fit within MaxPayloadSize
+        var packetTagGroups = new List<List<(uint crc, byte[] nameBytes)>>();
+        var currentGroup = new List<(uint crc, byte[] nameBytes)>();
+        var currentSize = headerOverhead;
+
+        foreach (var entry in tagEntries)
+        {
+            var entrySize = 4 + 2 + entry.nameBytes.Length; // crc + nameLen + name
+            if (currentSize + entrySize > UdpProtocol.MaxPayloadSize && currentGroup.Count > 0)
+            {
+                packetTagGroups.Add(currentGroup);
+                currentGroup = new List<(uint crc, byte[] nameBytes)>();
+                currentSize = headerOverhead;
+            }
+            currentGroup.Add(entry);
+            currentSize += entrySize;
+        }
+        // Always add at least one packet (even if 0 tags)
+        packetTagGroups.Add(currentGroup);
+
+        var packetTotal = (byte)packetTagGroups.Count;
+        var tsMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var seq = _groupSeq++;
+
+        for (byte packetIdx = 0; packetIdx < packetTotal; packetIdx++)
+        {
+            var group = packetTagGroups[packetIdx];
+            var payloadSize = headerOverhead + group.Sum(e => 4 + 2 + e.nameBytes.Length);
+            var buf = new byte[UdpProtocol.HeaderSize + payloadSize];
+
+            UdpProtocol.WriteHeader(buf, UdpProtocol.FlagMapping, _sourceId, tsMs, seq, 0, 1, 0);
+
+            var offset = UdpProtocol.HeaderSize;
+
+            // packetIdx + packetTotal
+            buf[offset++] = packetIdx;
+            buf[offset++] = packetTotal;
+
+            // sourceName
+            BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(offset), (ushort)sourceNameBytes.Length);
+            offset += 2;
+            sourceNameBytes.CopyTo(buf, offset);
+            offset += sourceNameBytes.Length;
+
+            // tagCount (in this packet)
+            BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(offset), (ushort)group.Count);
+            offset += 2;
+
+            // tag entries
+            foreach (var (crc, nameBytes) in group)
+            {
+                BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(offset), crc);
+                offset += 4;
+                BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(offset), (ushort)nameBytes.Length);
+                offset += 2;
+                nameBytes.CopyTo(buf, offset);
+                offset += nameBytes.Length;
+            }
+
+            try
+            {
+                await _udp.SendAsync(buf, buf.Length, _endpoint);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to send UDP mapping packet {Idx}/{Total} to {Dest}",
+                    packetIdx + 1, packetTotal, DestinationId);
+            }
+        }
+
+        _logger.LogDebug("Sent mapping for source '{Source}' ({TagCount} tags in {Packets} packets) to {Dest}",
+            _sourceIdStr, tagEntries.Count, packetTotal, DestinationId);
+    }
+
+    private async Task MappingLoopAsync(CancellationToken ct)
+    {
+        // Send initial mapping immediately
+        await SendMappingAsync();
+
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(MappingIntervalMs, ct);
+                await SendMappingAsync();
+            }
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error in mapping broadcast loop for {Dest}", DestinationId);
+            }
+        }
+    }
+
     /// <summary>Send a batch of tag values as UDP packets.</summary>
     public async Task SendBatchAsync(IReadOnlyList<TagValue> values, DateTimeOffset timestamp)
     {
         if (!Enabled || values.Count == 0) return;
 
-        var tsUs = timestamp.ToUnixTimeMilliseconds() * 1000;
+        var tsMs = timestamp.ToUnixTimeMilliseconds();
         var firstMsgId = values[0].MsgId;
 
         // Group by kind
@@ -56,7 +192,7 @@ public sealed class UdpBridgeSender : IDisposable
             };
 
             var items = group.ToList();
-            await SendGroupAsync(items, kindFlag, tsUs, firstMsgId);
+            await SendGroupAsync(items, kindFlag, tsMs, firstMsgId);
         }
     }
 
@@ -67,7 +203,7 @@ public sealed class UdpBridgeSender : IDisposable
         await SendBatchAsync([value], value.Timestamp);
     }
 
-    private async Task SendGroupAsync(List<TagValue> values, byte kindFlag, long tsUs, uint msgIdBase)
+    private async Task SendGroupAsync(List<TagValue> values, byte kindFlag, long tsMs, uint msgIdBase)
     {
         // Estimate sizes and fragment if needed
         var records = new List<(uint tagId, byte valueType, byte[] valueBytes)>();
@@ -108,7 +244,7 @@ public sealed class UdpBridgeSender : IDisposable
             var payloadSize = packets[i].Sum(r => 4 + 1 + r.valueBytes.Length);
             var buf = new byte[UdpProtocol.HeaderSize + payloadSize];
 
-            UdpProtocol.WriteHeader(buf, flags, _sourceId, tsUs, seq, (byte)i, fragTotal, msgIdBase);
+            UdpProtocol.WriteHeader(buf, flags, _sourceId, tsMs, seq, (byte)i, fragTotal, msgIdBase);
 
             var offset = UdpProtocol.HeaderSize;
             foreach (var (tagId, valueType, valueBytes) in packets[i])
@@ -154,5 +290,10 @@ public sealed class UdpBridgeSender : IDisposable
         return (UdpProtocol.TypeFloat64Array, buf);
     }
 
-    public void Dispose() => _udp.Dispose();
+    public void Dispose()
+    {
+        _mappingCts?.Cancel();
+        _mappingCts?.Dispose();
+        _udp.Dispose();
+    }
 }

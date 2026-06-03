@@ -4,11 +4,16 @@
 
 ```
 +-----------------------------------------------+
-|              Bridge.Host                      |
-|  - Program.cs / Worker                        |
+| Bridge.DataProvider / DataService / DataServer|
+|  - Program.cs (entry point per modalità)      |
+|  - appsettings.json (config completa)         |
++----------------------+------------------------+
+                       |
++----------------------v------------------------+
+|              Bridge.Host (library)            |
 |  - HTTP endpoints (Minimal API)               |
 |  - WebSocket endpoint + hub                   |
-|  - DI, configurazione, logging                |
+|  - Auth, middleware, configuration classes     |
 +----------------------+------------------------+
                        |
 +----------------------v------------------------+
@@ -61,11 +66,23 @@ Bridge.sln
 │   ├── Bridge.Storage/              // Persistenza
 │   │   └── Parquet/                 // Lettura/scrittura Parquet, export CSV
 │   │
-│   └── Bridge.Host/                 // Entry point
-│       ├── Endpoints/               // REST Minimal API
-│       ├── WebSockets/              // WS handler
-│       ├── Auth/                    // Middleware auth unificato
-│       └── Program.cs
+│   ├── Bridge.Host/                 // Libreria condivisa (endpoints, WS, auth, config)
+│   │   ├── Endpoints/               // REST Minimal API
+│   │   ├── WebSockets/              // WS handler
+│   │   ├── Auth/                    // Middleware auth
+│   │   └── Configuration/           // BridgeOptions e classi config
+│   │
+│   ├── Bridge.DataProvider/         // Exe: sorgente dati (PLC → WS/REST)
+│   │   ├── Program.cs
+│   │   └── appsettings.json
+│   │
+│   ├── Bridge.DataService/          // Exe: buffer + persistenza Parquet
+│   │   ├── Program.cs
+│   │   └── appsettings.json
+│   │
+│   └── Bridge.DataServer/           // Exe: aggregatore, analisi offline
+│       ├── Program.cs
+│       └── appsettings.json
 │
 ├── tools/
 │   ├── Bridge.Tools.UdpSimulator/   // Simulatore pacchetti UDP (test senza PLC)
@@ -93,16 +110,16 @@ Bridge.sln
 | JSON | **System.Text.Json** | Built-in, source generators per performance |
 | JWT | **Microsoft.AspNetCore.Authentication.JwtBearer** | Built-in ASP.NET Core |
 
-## Concetto di DataSource
+## Concetto di Source (DataSource)
 
-Il **DataSource** è l'unità logica fondamentale del sistema. Ogni DataSource:
+La **Source** (classe `DataSource` nel codice) e' l'unita' logica fondamentale del sistema. Ogni source:
 - Ha un nome univoco (es. `"linea1"`, `"pressa-nord"`)
 - Raggruppa un insieme di tag (telemetria, eventi, allarmi)
 - Ha una sorgente dati configurata (ADS, UDP, o connessione WS ad altro bridge)
-- I nomi dei tag devono essere univoci all'interno del DataSource
-- Lo stesso nome di tag può esistere in DataSource diversi
+- I nomi dei tag devono essere univoci all'interno della source
+- Lo stesso nome di tag puo' esistere in source diverse
 
-Ogni modalità operativa (DataProvider, DataService, DataServer) lavora con uno o più DataSource definiti in configurazione. Un DataProvider può avere più DataSource, ciascuno con input ADS e/o UDP che coesistono.
+Ogni modalita' operativa (DataProvider, DataService, DataServer) lavora con una o piu' source. Il DataProvider le definisce in `DataSources[]` con i relativi input. DataService e DataServer le scoprono automaticamente dall'upstream con `AutoDiscovery: true`, oppure le specificano in `Tags[]` con `AutoDiscovery: false`.
 
 ## Flusso lettura tag (REST)
 
@@ -119,8 +136,8 @@ Il comportamento varia in base alla modalità:
 ## Flusso sottoscrizione (WebSocket)
 1. Client apre `ws://host/ws`.
 2. Invia `{ "op": "subscribe", "source": "linea1", "tags": ["temperature", "pressure"] }`.
-   - Se `source` omesso → sottoscrizione a tutti i DataSource disponibili.
-   - Se `tags: ["ALL"]` → tutti i tag del DataSource.
+   - Se `source` omesso → sottoscrizione a tutte le source disponibili.
+   - Se `tags: ["ALL"]` → tutti i tag della source.
 3. `SubscriptionBroker` registra la sessione.
 4. Su variazione tag, broker pubblica messaggio push al client.
 
@@ -187,11 +204,11 @@ Il DataService può inviare dati al DataServer tramite **due canali paralleli**:
 
 Entrambi possono essere attivi contemporaneamente. Il DataServer deduplica i messaggi tramite `msgId`: se un dato arriva prima via UDP e poi via WS (o viceversa), il duplicato viene scartato.
 
-Le connessioni WS inter-bridge usano lo stesso protocollo dei client, con l'aggiunta di messaggi specifici (recovery, heartbeat, chunk transfer). Un nodo può sottoscriversi con tag `"ALL"` per ricevere tutto il DataSource, oppure con tag specifici per filtrare.
+Le connessioni WS inter-bridge usano lo stesso protocollo dei client, con l'aggiunta di messaggi specifici (recovery, heartbeat, chunk transfer). Con `AutoDiscovery: true` il nodo scopre automaticamente tutti i tag dall'upstream; con `AutoDiscovery: false` si specificano i tag esplicitamente nell'array `Tags`.
 
 | Modalità | Ruolo | Caratteristiche |
 |----------|-------|-----------------|
-| **DataProvider** | Sorgente dati pura | Legge da ADS e/o riceve UDP (coesistono). Espone via WS/REST senza caching né persistenza. Esegue comandi ricevuti e ritorna la risposta. È solo server — non si connette a nessuno. Ogni DataSource è definito in configurazione con i relativi input (ADS, UDP o entrambi). |
+| **DataProvider** | Sorgente dati pura | Legge da ADS e/o riceve UDP (coesistono). Espone via WS/REST senza caching ne' persistenza. Esegue comandi ricevuti e ritorna la risposta. E' solo server — non si connette a nessuno. Ogni source e' definita in `DataSources[]` con i relativi input (ADS, UDP o entrambi). |
 | **DataService** | Bridge intermedio | Si connette come client WS al DataProvider (o legge direttamente via ADS/UDP). Buffer circolare in memoria (configurabile, es. 1h) + salvataggio incrementale su file Parquet a frequenza piena. Espone come server WS/REST — il DataServer (o client finali) si sottoscrivono a lui. Applica downsampling sulla telemetria per i sottoscrittori che lo richiedono. |
 | **DataServer** | Aggregatore/storico | Si connette come client WS a uno o più DataService/DataProvider. Può caricare archivi Parquet salvati in precedenza. Espone come server WS/REST per i client finali. Inoltra comandi ricevuti verso la sorgente a cui è connesso. |
 
@@ -201,11 +218,17 @@ Il cambio di modalità operativa richiede un riavvio del servizio (niente hot-re
 
 Le connessioni WS tra bridge usano lo **stesso protocollo WebSocket** dei client, con queste convenzioni:
 - Il consumatore (DataService o DataServer) si connette come client WS alla sorgente
-- Invia `subscribe` con `tags: ["ALL"]` per ricevere tutto il DataSource, oppure tag specifici. Può specificare `downsampleMs` per richiedere telemetria a frequenza ridotta.
-- Può inviare `subscribe` con `since: <msgId>` per richiedere recovery dei messaggi persi
-- La sorgente risponde con `recoveryStart` → messaggi normali → `recoveryEnd`, oppure `recoveryFailed` se il buffer è già stato ruotato
+- Alla connessione invia `getSources` per scoprire le source e i tag disponibili sull'upstream
+- Invia `subscribe` con `source` e `tags` specifici (il campo `source` e' il nome della source scoperta via `getSources`)
+- Se `source` omesso nel subscribe → sottoscrizione a tutte le source
+- Se `tags: ["ALL"]` → tutti i tag della source
+- Puo' specificare `downsampleMs` per richiedere telemetria a frequenza ridotta
+- Puo' inviare `subscribe` con `since: <msgId>` per richiedere recovery dei messaggi persi
+- La sorgente risponde con `recoveryStart` → messaggi normali → `recoveryEnd`, oppure `recoveryFailed` se il buffer e' gia' stato ruotato
 
-Il downsampling è applicato **dalla sorgente** (il server) verso il sottoscrittore che lo richiede, secondo la configurazione `ForwardIntervalMs` del consumatore. Questo è gestito lato server perché è il server a sapere la frequenza reale dei dati.
+Con `SelectiveSubscription: true` (default nel DataServer), le sottoscrizioni upstream vengono gestite dall'`UpstreamSubscriptionAggregator`: il DataServer sottoscrive solo i canali che i suoi client stanno attivamente visualizzando. Con `SelectiveSubscription: false` (DataService), il nodo sottoscrive tutto al momento della connessione.
+
+Il downsampling e' applicato **dalla sorgente** (il server) verso il sottoscrittore che lo richiede, secondo la configurazione `ForwardIntervalMs` del consumatore. Questo e' gestito lato server perche' e' il server a sapere la frequenza reale dei dati.
 
 ### Protocollo inter-bridge: UDP live stream
 
@@ -214,13 +237,17 @@ In alternativa (o in aggiunta) al canale WS, il DataService può inviare lo stre
 **Caratteristiche**:
 - Il DataService è il **sender** (invia a una o più destinazioni configurate)
 - Il DataServer è il **receiver** (ascolta su una singola porta per tutte le sorgenti)
-- Più DataSource possono condividere la stessa porta UDP — il protocollo include l'identificativo della sorgente
+- Piu' source possono condividere la stessa porta UDP — il protocollo include l'identificativo della sorgente (CRC32)
 - Il DataServer può ricevere contemporaneamente da WS e UDP e deduplica via `msgId`
 - Le destinazioni UDP si attivano/disattivano tramite comandi REST/WS senza riavvio
 
 **Protocollo binario UDP**:
 
-Il protocollo è binario e compatto. Ogni pacchetto UDP ha un MTU-safe di max **1400 byte** di payload per garantire compatibilità internet (no frammentazione IP).
+Il protocollo è binario e compatto, **completamente autosufficiente** — non richiede WS o REST per la risoluzione dei nomi. Ogni pacchetto UDP ha un MTU-safe di max **1400 byte** per garantire compatibilità internet (no frammentazione IP).
+
+Il protocollo prevede due tipi di messaggio: **Mapping** (risoluzione nomi) e **Data** (valori tag).
+
+#### Header comune (24 byte)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -228,7 +255,7 @@ Il protocollo è binario e compatto. Ogni pacchetto UDP ha un MTU-safe di max **
 ├──────────┬──────────┬──────────┬──────────┬─────────────┤
 │ Magic(2) │ Ver(1)   │ Flags(1) │ SourceId │ Timestamp   │
 │ 0xBD01   │ 0x01     │ see below│ (4 byte) │ (8 byte)    │
-│          │          │          │ CRC32    │ Unix µs     │
+│          │          │          │ CRC32    │ Unix ms     │
 ├──────────┴──────────┴──────────┼──────────┴─────────────┤
 │ GroupSeq (2 byte)              │ FragIdx(1) FragTot(1)   │
 │ sequenza del gruppo di msg     │ 0/1 = no frag           │
@@ -240,49 +267,151 @@ Flags (1 byte):
   bit 0-1: tipo dato (00=telemetry, 01=event, 10=alarm)
   bit 2:   fragmented (1 = pacchetto parte di un gruppo frammentato)
   bit 3:   compressed (1 = payload compresso)
-  bit 4-7: riservati
+  bit 4:   metadata (riservato)
+  bit 5:   mapping  (1 = pacchetto mapping nomi, 0 = pacchetto dati)
+  bit 6-7: riservati
+```
 
-┌─────────────────────────────────────────────────────────┐
-│                    Payload (max 1376 byte)               │
+#### Messaggio Mapping (Flags bit 5 = 1, FlagMapping = 0x20)
+
+Il sender invia periodicamente (default ogni 10s) uno o piu' pacchetti mapping che contengono le corrispondenze CRC32 → nome per source e tag. Il receiver **non puo' processare pacchetti dati** finche' non ha ricevuto il mapping completo — il canale UDP e' quindi autosufficiente.
+
+Se i tag sono troppi per un singolo pacchetto, vengono divisi in piu' pacchetti. Ogni pacchetto porta `packetIdx` e `packetTotal` per consentire al receiver di collezionarli, ordinarli e processarli solo quando sono tutti arrivati.
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Header (24 byte) — Flags = 0x20 (FlagMapping)          │
+│  SourceId = CRC32 del nome source                        │
+│  GroupSeq = identifica il gruppo di mapping packets       │
+│  MsgIdBase = 0 (non usato per mapping)                   │
 ├──────────────────────────────────────────────────────────┤
-│ N record, ciascuno:                                      │
+│  Payload mapping:                                        │
+│                                                          │
+│  ┌─────────────┐                                         │
+│  │ packetIdx(1)│  indice di questo pacchetto (0-based)   │
+│  │ packetTot(1)│  numero totale pacchetti nel gruppo      │
+│  ├─────────────┤                                         │
+│  │ srcNameLen(2)│  lunghezza nome source (UTF-8 bytes)   │
+│  │ srcName(N)   │  nome source in chiaro                 │
+│  ├──────────────┤                                        │
+│  │ tagCount(2)  │  numero tag IN QUESTO pacchetto        │
+│  ├──────────────┤                                        │
+│  │ Per ogni tag:                                         │
+│  │  ┌──────────┬───────────┬──────────────┐              │
+│  │  │ CRC32(4) │ nameLen(2)│ name(N)      │              │
+│  │  └──────────┴───────────┴──────────────┘              │
+│  │  ... ripetuto tagCount volte                          │
+│  └───────────────────────────────────────────────────────┘
+│                                                          │
+│ Tutti i campi numerici sono little-endian.                │
+│ I nomi sono stringhe UTF-8.                              │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Flusso mapping**:
+
+```
+DataService (sender)                     DataServer (receiver, porta 9200)
+  │                                          │
+  │ ── mapping pkt 0/3 (source + tag 0-49)  ──► │ bufferizza
+  │ ── mapping pkt 1/3 (tag 50-99)          ──► │ bufferizza
+  │ ── mapping pkt 2/3 (tag 100-142)        ──► │ tutti ricevuti → processa
+  │                                          │   registra source "linea1"
+  │                                          │   registra 142 tag (CRC→nome)
+  │                                          │
+  │ ── data pkt (telemetry) ─────────────────► │ ora puo' risolvere CRC→nome
+  │                                          │
+  │     ... 10 secondi dopo ...              │
+  │ ── mapping pkt 0/3 (refresh) ───────────► │ aggiorna (noop se invariato,
+  │ ── mapping pkt 1/3                 ──────► │  registra nuovi tag se aggiunti)
+  │ ── mapping pkt 2/3                 ──────► │
+```
+
+Se il receiver riceve un pacchetto dati con un SourceId sconosciuto (mapping non ancora arrivato), lo scarta silenziosamente. Il prossimo ciclo di mapping risolve la situazione.
+
+Se un pacchetto mapping del gruppo si perde (UDP e' best-effort), il gruppo parziale viene scartato dopo 30 secondi. Il prossimo ciclo periodico (10s) rinvia tutto.
+
+**Esempio con pochi tag** (tutto in 1 pacchetto):
+
+```
+Header: Magic=0xBD01 Ver=1 Flags=0x20 SourceId=CRC32("linea1") ...
+Payload:
+  00           <- packetIdx = 0
+  01           <- packetTotal = 1  (un solo pacchetto)
+  06 00        <- srcNameLen = 6
+  6C 69 6E 65 61 31  <- "linea1" (UTF-8)
+  03 00        <- tagCount = 3
+  A1 B2 C3 D4  <- CRC32("temperature")
+  0B 00        <- nameLen = 11
+  74 65 6D 70 65 72 61 74 75 72 65  <- "temperature"
+  E5 F6 07 18  <- CRC32("pressure")
+  08 00        <- nameLen = 8
+  70 72 65 73 73 75 72 65  <- "pressure"
+  ...
+```
+
+#### Messaggio Data (Flags bit 5 = 0, bit 0-1 = tipo dato)
+
+I pacchetti dati trasportano i valori dei tag. Usano CRC32 per identificare i tag — il receiver li risolve in nomi tramite la tabella costruita dal mapping ricevuto in precedenza.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Header (24 byte) — Flags bit 0-1 = tipo dato           │
+│  SourceId = CRC32 del nome source                        │
+│  MsgIdBase = msgId del primo record nel pacchetto        │
+├──────────────────────────────────────────────────────────┤
+│  Payload dati (max 1376 byte):                           │
+│                                                          │
+│  N record, ciascuno:                                     │
 │  ┌────────┬──────────┬──────────────────────┐            │
 │  │TagId(4)│ValueType │Value (variabile)     │            │
 │  │CRC32   │(1 byte)  │                      │            │
 │  └────────┴──────────┴──────────────────────┘            │
 │                                                          │
-│ ValueType: 0x01=float32, 0x02=float64, 0x03=int32,      │
-│            0x04=bool, 0x05=float32[], 0x06=float64[]     │
-│ Per array: prefisso count(2 byte) + N valori             │
+│  ValueType: 0x01=float32(4B), 0x02=float64(8B),         │
+│             0x03=int32(4B),   0x04=bool(1B),             │
+│             0x05=float32[],   0x06=float64[]             │
+│  Per array: prefisso count(2 byte) + N valori            │
 │                                                          │
-│ MsgId di ogni record = MsgIdBase + indice nel pacchetto  │
+│  MsgId di ogni record = MsgIdBase + indice nel pacchetto │
 └──────────────────────────────────────────────────────────┘
 ```
 
-**SourceId**: CRC32 del nome DataSource. Il DataServer conosce il mapping dalla configurazione/API.
+**SourceId**: CRC32 del nome source. Il receiver lo risolve tramite il mapping ricevuto via UDP.
 
-**TagId**: CRC32 (4 byte) del nome tag. Con 4 byte la probabilità di collisione è trascurabile anche con migliaia di tag (~0.00002% con 1000 tag). Il DataServer risolve il mapping all'avvio chiedendo l'elenco tag via REST (`GET /sources/{source}/tags`).
+**TagId**: CRC32 (4 byte) del nome tag. Con 4 byte la probabilita' di collisione e' trascurabile anche con migliaia di tag (~0.00002% con 1000 tag). Il receiver risolve il mapping tramite la tabella costruita dai pacchetti mapping UDP.
 
-**MsgId**: uint32, contatore incrementale per DataSource. Il `MsgIdBase` nel header + offset posizionale del record nel pacchetto determinano il msgId di ogni record. A 1000 msg/sec dura ~49 giorni. Al rollover (wrap a 0) il DataServer rileva il wrap tramite il salto all'indietro e continua normalmente.
+**MsgId**: uint32, contatore incrementale per source. Il `MsgIdBase` nel header + offset posizionale del record nel pacchetto determinano il msgId di ogni record. A 1000 msg/sec dura ~49 giorni. Al rollover (wrap a 0) il DataServer rileva il wrap tramite il salto all'indietro e continua normalmente.
 
-**Timestamp**: nel header del pacchetto, in microsecondi Unix UTC. Tutti i record nel pacchetto condividono lo stesso timestamp. Se i record hanno timestamp diversi → pacchetti separati.
+**Timestamp**: nel header del pacchetto, in millisecondi Unix UTC. Tutti i record nel pacchetto condividono lo stesso timestamp. Se i record hanno timestamp diversi → pacchetti separati.
 
-**Frammentazione**:
+**Frammentazione** (pacchetti dati):
 
 Se i dati da inviare per un timestamp superano 1376 byte (es. tanti tag o array grandi):
 - Il DataService li suddivide in N pacchetti con stesso `GroupSeq` e `Timestamp`
 - `FragIdx` = indice del frammento (0-based), `FragTot` = totale frammenti
 - Il DataServer riassembla i frammenti con stesso `GroupSeq` + `Timestamp` prima di processarli
-- Se un frammento manca → il DataServer scarta il gruppo parziale (best-effort) — il chunk transfer recupererà
+- Se un frammento manca → il DataServer scarta il gruppo parziale (best-effort) — il chunk transfer recupera
 
 ```
 Esempio: 60 tag telemetria allo stesso timestamp = ~360 byte → 1 pacchetto (no frag)
 Esempio: 300 tag telemetria = ~1800 byte → 2 pacchetti (GroupSeq=42, Frag 0/2 e 1/2)
 ```
 
-**Deduplicazione**:
+#### Sequenza di avvio del canale UDP
 
-Il DataServer mantiene un set di `msgId` recenti (sliding window). Se un dato arriva via UDP con msgId=100234 e poi lo stesso arriva via WS batch → il secondo viene scartato. Funziona anche nel caso opposto (WS prima, UDP dopo).
+```
+1. Sender avvia MappingBroadcast (periodico, ogni 10s)
+2. Sender invia mapping packet(s)       → receiver costruisce tabelle CRC→nome
+3. Sender inizia a inviare data packets → receiver puo' risolvere e processare
+4. Ogni 10s: sender re-invia mapping    → receiver aggiorna (nuovi tag, noop se invariato)
+```
+
+Il canale UDP e' completamente autosufficiente: non richiede WS ne' REST per funzionare. Se il DataServer riceve sia dati UDP che WS, deduplica tramite `msgId`.
+
+#### Deduplicazione
+
+Il DataServer mantiene un set di `msgId` recenti (sliding window). Se un dato arriva via UDP con msgId=100234 e poi lo stesso arriva via WS (o viceversa), il duplicato viene scartato.
 
 ```
 DataService                                  DataServer (porta 9200)
@@ -290,7 +419,7 @@ DataService                                  DataServer (porta 9200)
   │ ──── UDP packet (linea1, telemetry) ──────► │ riceve, msgId=100234
   │ ──── UDP packet (linea1, event) ──────────► │ riceve, msgId=100235
   │                                              │
-  │ ──── WS batch (linea1, telemetry) ────────► │ msgId=100234 già visto → skip
+  │ ──── WS batch (linea1, telemetry) ────────► │ msgId=100234 gia' visto → skip
   │                                              │ msgId=100236 nuovo → inserisce
 ```
 
@@ -347,7 +476,7 @@ Il DataService applica downsampling **solo sulla telemetria** verso i sottoscrit
 
 ### Message ID (RF-19)
 
-Ogni messaggio porta un **MsgId** (uint32) incrementale **per DataSource**. Il MsgId è assegnato dalla prima sorgente che genera il dato (DataProvider o DataService con input diretto) e mantenuto lungo tutta la catena.
+Ogni messaggio porta un **MsgId** (uint32) incrementale **per source**. Il MsgId è assegnato dalla prima sorgente che genera il dato (DataProvider o DataService con input diretto) e mantenuto lungo tutta la catena.
 
 A 1000 msg/sec il MsgId dura ~49 giorni prima del rollover. Al wrap (overflow → 0) il DataServer rileva il salto all'indietro e continua normalmente la deduplicazione e il tracking.
 
@@ -635,7 +764,7 @@ Ogni riga corrisponde a un timestamp+msgId. I tag senza valore per un dato times
 
 Solo il **DataService** (`PersistToDisk: true`): scrive quando un chunk viene sealed (evento `OnChunkSealed`). Un chunk da 5 minuti produce fino a 3 file (uno per kind presente: telemetry, event, alarm).
 
-Il **DataServer non scrive Parquet**. I dati Full ricevuti via chunk transfer restano in memoria. Per analisi offline, il DataServer carica i file Parquet prodotti dal DataService.
+Il **DataServer salva automaticamente** i chunk ricevuti via chunk transfer come file Parquet in `ParquetArchivePath`. Questo garantisce che i dati siano disponibili anche dopo un riavvio. Il DataServer può anche caricare file Parquet aggiuntivi (prodotti dal DataService o copiati manualmente) tramite le API `/archives/load` e `/archives/load-range`.
 
 ### Caricamento archivi (DataServer)
 
@@ -810,7 +939,7 @@ Aggiungere un nuovo protocollo richiede: implementare `IDataInput`, `IDataInputF
 | **Modbus** | Modbus TCP/RTU | Receive, Read, Write, BatchRead | Da implementare. |
 | **OPC-UA** | OPC-UA | Receive, Read, Write, Subscribe, Browse | Da implementare. |
 
-I tipi di input possono coesistere nella stessa istanza e nello stesso DataSource. L'architettura è estensibile tramite il pattern IDataInputFactory + InputRegistry.
+I tipi di input possono coesistere nella stessa istanza e nella stessa source. L'architettura è estensibile tramite il pattern IDataInputFactory + InputRegistry.
 
 ## Componenti cross-cutting
 - **Configuration**: `appsettings.json` + env vars + `IOptionsMonitor`.
@@ -838,7 +967,7 @@ Fase 2 — DataService ✅ COMPLETATA
 ├── InterBridge: WsClient (connessione al DataProvider)
 ├── Host: query temporali (queryTelemetry/Events/Alarms)
 ├── Host: comandi bridge (start/stop/archive/clear)
-├── Config: Mode=DataService con Sources[] e DataSources[]
+├── Config: Mode=DataService con Sources[] (AutoDiscovery) e DataSources[]
 └── Test: buffer, query range, flush Parquet
 
 Fase 3 — Input UDP ✅ COMPLETATA

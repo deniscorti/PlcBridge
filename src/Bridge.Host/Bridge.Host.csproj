@@ -4,7 +4,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Bridge.Host</RootNamespace>
-    <OutputType>Exe</OutputType>
+    <OutputType>Library</OutputType>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,11 +18,5 @@
     <ProjectReference Include="..\Bridge.Contracts\Bridge.Contracts.csproj" />
     <ProjectReference Include="..\Bridge.Storage\Bridge.Storage.csproj" />
     <ProjectReference Include="..\Bridge.InterBridge\Bridge.InterBridge.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="Properties\launchSettings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 </Project>

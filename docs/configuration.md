@@ -1,11 +1,32 @@
 # Configurazione
 
-La configurazione è caricata da:
-1. `appsettings.json` (default committato)
-2. `appsettings.{Environment}.json` (es. `appsettings_DataProvider.json`)
-3. `appsettings.Local.json` (gitignorato, override locali)
-4. Variabili d'ambiente con prefisso `BRIDGE_`
-5. Argomento `--config <file>` per specificare un file custom
+Ogni modalità operativa ha il proprio progetto eseguibile con la propria `appsettings.json`. Ogni file di configurazione contiene **tutte le sezioni possibili** con un flag `Enabled` che indica se la sezione è attiva o meno. Questo permette di vedere a colpo d'occhio tutte le opzioni disponibili.
+
+## Config layering
+
+1. `appsettings.json` del progetto — configurazione completa per la modalità
+2. `--config <file>` — override esplicito (priorità massima), argomento da riga di comando
+3. Variabili d'ambiente con prefisso `BRIDGE__` (doppio underscore, es. `BRIDGE__Http__Port=5080`)
+
+## Come lanciare i nodi
+
+Ogni nodo è un progetto separato:
+
+```bash
+# Terminale 1: DataProvider su porta 5080
+dotnet run --project src/Bridge.DataProvider
+
+# Terminale 2: DataService su porta 5081 (si collega al Provider su :5080)
+dotnet run --project src/Bridge.DataService
+
+# Terminale 3: DataServer su porta 5082 (si collega al Service su :5081)
+dotnet run --project src/Bridge.DataServer
+```
+
+Oppure con `--config` override:
+```bash
+dotnet run --project src/Bridge.DataProvider -- --config config/my-provider.json
+```
 
 ## Porte e connessioni
 
@@ -18,289 +39,68 @@ DataServer    :5082  ← server + client WS verso DataService :5081
 Client web             client WS verso DataServer :5082
 ```
 
-La porta è configurata in `Http.Port` e viene applicata automaticamente a Kestrel. Non serve specificarla altrove (launchSettings, env vars, ecc.) — il valore nel config ha la precedenza.
-
-Nella sezione `Sources[]` si configura la connessione **client** WS verso il nodo upstream:
-- `Url`: indirizzo WS del server a cui collegarsi (es. `ws://localhost:5081/ws`)
-- Il nodo remoto deve essere già in ascolto su quella porta
+La porta è configurata in `Http.Port` e viene applicata automaticamente a Kestrel.
 
 ```
 ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
 │  DataProvider     │       │  DataService      │       │  DataServer      │
 │  Http.Port: 5080  │◄──WS──│  Http.Port: 5081  │◄──WS──│  Http.Port: 5082 │◄──WS── Client
-│  Sources: []      │       │  Sources: [       │       │  Sources: [      │
+│                   │       │  Sources: [       │       │  Sources: [      │
 │                   │       │   Url: ws://:5080 │       │   Url: ws://:5081│
 │                   │       │  ]                │       │  ]               │
 └──────────────────┘       └──────────────────┘       └──────────────────┘
 ```
 
-> **Importante**: se si lanciano più nodi sulla stessa macchina, ogni nodo DEVE avere una porta `Http.Port` diversa, altrimenti il bind fallisce.
+---
+
+## Pattern Enabled
+
+Ogni sezione di configurazione (DataSources, Sources, UdpDestinations, UdpReceiver, Buffer) ha un campo `Enabled` (bool). Con `Enabled: false` la sezione è visibile ma ignorata dal programma. Questo permette di:
+- Vedere tutte le opzioni possibili senza cercare nella documentazione
+- Attivare/disattivare funzionalità cambiando un solo campo
+- Avere template di configurazione pronti da copiare
 
 ---
 
-## Esempio: DataProvider
+## DataProvider — `src/Bridge.DataProvider/appsettings.json`
 
-Sorgente dati pura. Legge da ADS e/o riceve UDP, espone via WS/REST.
+Sorgente dati pura. Legge da PLC (ADS, UDP) o simulatore (Mock), espone via WS/REST.
 
-```jsonc
-{
-  "Bridge": {
-    "Mode": "DataProvider",
-    "Http": { "Port": 5080 },
-    "WebSocket": {
-      "Path": "/ws",
-      "MaxConnections": 100
-    },
-    "Auth": {
-      "ApiKey": "provider-key-123",
-      "JwtSecret": "shared-secret-for-jwt"
-    },
-    "DataSources": [
-      {
-        "Id": "linea1",
-        "Inputs": [
-          {
-            "Type": "Ads",
-            "Host": "192.168.0.10",
-            "AmsNetId": "5.23.40.1.1.1",
-            "Port": 851,
-            "Tags": [
-              { "Name": "temperature", "Address": "MAIN.fTemperature", "DataKind": "Telemetry", "PollMs": 500 },
-              { "Name": "setpoint",    "Address": "MAIN.fSetpoint",    "DataKind": "Telemetry", "PollMs": 1000 },
-              { "Name": "startButton", "Address": "MAIN.bStart",       "DataKind": "Event" },
-              { "Name": "overtemp",    "Address": "MAIN.bOverTemp",    "DataKind": "Alarm" }
-            ]
-          },
-          {
-            "Type": "Udp",
-            "ListenPort": 9100,
-            "Protocol": "custom-v1",
-            "Tags": [
-              { "Name": "vibration", "Offset": 0, "Length": 12, "DataKind": "Telemetry" }
-            ]
-          }
-        ]
-      },
-      {
-        "Id": "pressa-nord",
-        "Inputs": [
-          {
-            "Type": "Ads",
-            "Host": "192.168.0.20",
-            "AmsNetId": "5.23.40.2.1.1",
-            "Port": 851,
-            "Tags": [
-              { "Name": "pressure",  "Address": "MAIN.fPressure",  "DataKind": "Telemetry", "PollMs": 200 },
-              { "Name": "cycleEnd", "Address": "MAIN.bCycleEnd", "DataKind": "Event" }
-            ]
-          }
-        ]
-      }
-    ]
-  },
-  "Serilog": { "MinimumLevel": "Information" }
-}
-```
-
-**Note**:
-- Un DataSource può avere più Input (ADS + UDP coesistenti)
-- I nomi dei tag devono essere univoci all'interno del DataSource
-- Nessun buffer, nessuna persistenza
+Sezioni rilevanti:
+- **DataSources** (`Enabled: true`): input diretti da PLC
+- Buffer, Sources, UdpDestinations: non presenti (non servono)
 
 ---
 
-## Esempio: DataService
+## DataService — `src/Bridge.DataService/appsettings.json`
 
-Buffer in memoria + persistenza Parquet. Si connette al DataProvider (o legge direttamente).
+Buffer in memoria + persistenza Parquet. Si connette al DataProvider e/o legge direttamente da PLC.
 
-```jsonc
-{
-  "Bridge": {
-    "Mode": "DataService",
-    "Http": { "Port": 5080 },
-    "WebSocket": {
-      "Path": "/ws",
-      "MaxConnections": 500,
-      "MaxSubscriptionsPerClient": 200,
-      "MaxQueriesPerMinute": 60,
-      "MaxMessageQueueSize": 10000
-    },
-    "Auth": {
-      "ApiKey": "service-key-456",
-      "JwtSecret": "shared-secret-for-jwt"
-    },
-    "Buffer": {
-      "InMemoryMinutes": 60,
-      "ChunkDurationMin": 5,
-      "PersistToDisk": true,
-      "ParquetOutputPath": "./data/parquet"    // dove il DataService scrive i Parquet
-    },
-    "CommandTimeoutMs": 5000,
-    "HeartbeatIntervalMs": 10000,
-    "HeartbeatMaxMissed": 3,
-
-    // Sorgenti da cui questo nodo riceve dati (si connette come client WS)
-    "Sources": [
-      {
-        "Id": "linea1",
-        "DataSource": "linea1",
-        "Url": "ws://192.168.0.50:5080/ws",
-        "ApiKey": "provider-key-123",
-        "SubscribeTags": "ALL",
-        "ForwardIntervalMs": 2000,
-        "Compression": "none",
-        "BatchMode": false
-      }
-    ],
-
-    // Destinazioni UDP per stream live (DataService invia, DataServer riceve)
-    "UdpDestinations": [
-      {
-        "Id": "server-main",
-        "Host": "dataserver.example.com",
-        "Port": 9200,
-        "Sources": ["linea1", "pressa-nord"],
-        "Enabled": true,
-        "DownsampleMs": 2000,
-        "MaxPacketBytes": 1400
-      },
-      {
-        "Id": "server-backup",
-        "Host": "dataserver-backup.local",
-        "Port": 9200,
-        "Sources": ["linea1"],
-        "Enabled": false
-      }
-    ],
-
-    // Oppure input diretti (senza DataProvider intermedio)
-    "DataSources": [
-      {
-        "Id": "pressa-nord",
-        "Inputs": [
-          {
-            "Type": "Ads",
-            "Host": "192.168.0.20",
-            "AmsNetId": "5.23.40.2.1.1",
-            "Port": 851,
-            "Tags": [
-              { "Name": "pressure",  "Address": "MAIN.fPressure",  "DataKind": "Telemetry", "PollMs": 200 },
-              { "Name": "cycleEnd", "Address": "MAIN.bCycleEnd", "DataKind": "Event" }
-            ]
-          }
-        ]
-      }
-    ]
-  },
-  "Serilog": { "MinimumLevel": "Information" }
-}
-```
-
-**Note**:
-- `Sources` = connessione WS ad altri bridge (ogni source diventa un DataSource locale)
-- `DataSources` = input diretti (ADS/UDP), come nel DataProvider
-- Possono coesistere: alcuni DataSource da bridge remoti, altri da input diretti
-- `ForwardIntervalMs` = downsampling telemetria per stream WS
-- `UdpDestinations` = invio stream live via UDP binario, attivabili/disattivabili a runtime via comando
-- Lo stesso stream può essere inviato sia via UDP che via WS — il DataServer deduplica via msgId
+Sezioni rilevanti:
+- **Buffer** (`Enabled: true`): ring buffer con flush Parquet
+- **Sources** (`Enabled: true/false`): connessione WS upstream al DataProvider. `AutoDiscovery: true` per scoprire tutti i tag automaticamente, oppure `Tags: ["tag1", "tag2"]` per lista esplicita
+- **DataSources** (`Enabled: true/false`): input diretti (opzionale, se DataService legge anche direttamente)
+- **UdpDestinations** (`Enabled: true/false`): invio stream UDP verso DataServer (invia automaticamente mapping periodico con nomi source/tag)
 
 ---
 
-## Esempio: DataServer
+## DataServer — `src/Bridge.DataServer/appsettings.json`
 
-Aggregatore. Si connette a uno o più DataService/DataProvider. Buffer grande, replay, caricamento archivi.
+Aggregatore. Si connette al DataService, buffer grande, replay, caricamento archivi Parquet per analisi offline.
 
-```jsonc
-{
-  "Bridge": {
-    "Mode": "DataServer",
-    "Http": { "Port": 5080 },
-    "WebSocket": {
-      "Path": "/ws",
-      "MaxConnections": 2000,
-      "MaxSubscriptionsPerClient": 500,
-      "MaxQueriesPerMinute": 120,
-      "MaxMessageQueueSize": 50000,
-      "CompactFlushMs": 50
-    },
-    "Auth": {
-      "ApiKey": "server-key-789",
-      "JwtSecret": "shared-secret-for-jwt"
-    },
-    "Buffer": {
-      "InMemoryMinutes": 300,
-      "ChunkDurationMin": 5,
-      "ParquetArchivePath": "./data/archives"  // dove il DataServer trova i Parquet da caricare
-    },
-    "CommandTimeoutMs": 10000,
-    "HeartbeatIntervalMs": 10000,
-    "HeartbeatMaxMissed": 3,
-
-    // Selective live subscription: il DataServer sottoscrive upstream solo i canali visualizzati dai client
-    "SelectiveSubscription": true,   // default true per DataServer
-    "BackfillMinutes": 10,           // minuti di storia recuperati al primo subscribe di un canale
-
-    // Sorgenti WS (comandi, chunk transfer, fallback stream)
-    "Sources": [
-      {
-        "Id": "bridge-linea1",
-        "DataSource": "linea1",
-        "Url": "wss://bridge-service.example.com:5080/ws",
-        "ApiKey": "service-key-456",
-        "SubscribeTags": "ALL",
-        "ForwardIntervalMs": 2000,
-        "Compression": "brotli",
-        "BatchMode": true,
-        "ChunkSync": true,
-        "ChunkSyncMaxBandwidthKbps": 100
-      },
-      {
-        "Id": "bridge-pressa",
-        "DataSource": "pressa-nord",
-        "Url": "wss://bridge-service.example.com:5080/ws",
-        "ApiKey": "service-key-456",
-        "SubscribeTags": "ALL",
-        "ForwardIntervalMs": 5000,
-        "Compression": "brotli",
-        "BatchMode": true,
-        "ChunkSync": true,
-        "ChunkSyncMaxBandwidthKbps": 50
-      }
-    ],
-
-    // Ricezione stream UDP (stessa porta per tutti i DataSource)
-    "UdpReceiver": {
-      "ListenPort": 9200,
-      "Sources": [
-        { "DataSource": "linea1", "Enabled": true },
-        { "DataSource": "pressa-nord", "Enabled": true }
-      ]
-    }
-  },
-  "Serilog": { "MinimumLevel": "Information" }
-}
-```
-
-**Note**:
-- Buffer a 300 minuti (5 ore) per storico più ampio
-- Il DataServer non scrive Parquet — i chunk Full ricevuti via chunk transfer restano in memoria
-- `ParquetArchivePath` — cartella dove il DataServer trova i Parquet da caricare per analisi offline. I file vengono tipicamente copiati qui dal DataService (NAS condiviso, sync, copia manuale)
-- Caricamento via `/archives/load` (singolo file) o `/archives/load-range` (per intervallo temporale)
-- `ChunkSync: true` — abilita trasferimento chunk full in background
-- `ChunkSyncMaxBandwidthKbps` — limita la banda usata dal trasferimento background (i chunk immediate ignorano il limite)
-- Compressione Brotli + batch per connessione internet WS
-- `UdpReceiver` — porta unica per ricevere stream UDP da tutti i DataSource. Ogni source è attivabile/disattivabile a runtime via comando
-- UDP e WS possono essere attivi contemporaneamente — deduplicazione automatica via msgId
-- `CommandTimeoutMs` più alto per catena con più hop
-- `SelectiveSubscription: true` — il DataServer non sottoscrive ALL ma solo i canali che i client richiedono (risparmia banda upstream)
-- `BackfillMinutes: 10` — al primo subscribe di un canale, recupera N minuti di storia dall'upstream
-- `CompactFlushMs: 50` — intervallo di accumulo per push compatti (più basso = meno latenza, più alto = più batching)
+Sezioni rilevanti:
+- **Buffer** (`Enabled: true`): buffer grande in memoria (300 min default)
+- **Sources** (`Enabled: true`): connessione WS upstream al DataService. `AutoDiscovery: true` per scoprire tutti i tag automaticamente, oppure `Tags: ["tag1", "tag2"]` per lista esplicita
+- **UdpReceiver** (`Enabled: true/false`): ricezione stream UDP dal DataService. `AutoDiscovery: true` per accettare qualsiasi source dallo stream (risoluzione nomi tramite pacchetti mapping UDP)
+- **SelectiveSubscription**: sottoscrive upstream solo i canali richiesti dai client
+- Il DataServer **salva automaticamente** i chunk ricevuti via chunk transfer come file Parquet in `ParquetArchivePath`
+- `ParquetArchivePath`: cartella dove trovare i Parquet da caricare per analisi offline
 
 ---
 
 ## Variabili d'ambiente (esempi)
+
 ```
-BRIDGE__Mode=DataServer
 BRIDGE__Http__Port=5080
 BRIDGE__Auth__ApiKey=supersecret
 BRIDGE__Buffer__InMemoryMinutes=300
@@ -315,7 +115,7 @@ Il client web in `clients/web/` si configura tramite variabili d'ambiente Vite (
 Creare un file `clients/web/.env.local` (gitignorato):
 
 ```
-VITE_BRIDGE_WS_URL=ws://localhost:5080/ws
+VITE_BRIDGE_WS_URL=ws://localhost:5082/ws
 VITE_BRIDGE_API_KEY=server-key-789
 ```
 
@@ -323,10 +123,6 @@ VITE_BRIDGE_API_KEY=server-key-789
 |-----------|---------|-------------|
 | `VITE_BRIDGE_WS_URL` | `ws://localhost:5080/ws` | URL WebSocket del Bridge |
 | `VITE_BRIDGE_API_KEY` | (vuoto) | API key per autenticazione WS |
-
-In **sviluppo** (`npm run dev`), Vite proxya le richieste `/api/*` e `/ws/*` verso `http://localhost:5080` (configurato in `vite.config.ts`).
-
-In **produzione** (`npm run build` → `dist/`), servire i file statici con qualsiasi web server. Il client si connette direttamente all'URL specificato in `VITE_BRIDGE_WS_URL`.
 
 ---
 
@@ -337,13 +133,6 @@ In **produzione** (`npm run build` → `dist/`), servire i file statici con qual
 ```bash
 dotnet run --project tools/Bridge.Tools.UdpSimulator -- [host] [port] [intervalMs] [tagCount]
 ```
-
-| Parametro | Default | Descrizione |
-|-----------|---------|-------------|
-| `targetHost` | `127.0.0.1` | IP destinazione |
-| `targetPort` | `9100` | Porta UDP |
-| `intervalMs` | `200` | Intervallo tra pacchetti |
-| `tagCount` | `10` | Numero tag per pacchetto |
 
 ### WebClient (debug)
 

@@ -12,7 +12,7 @@ namespace Bridge.Storage.Parquet;
 /// Writes/reads sealed chunks as Parquet files.
 /// New format: one file per (source, dataKind, chunk), with tags as columns.
 /// Filename: {source}_{kind}_{fromTs}_{toTs}_{firstMsgId}_{lastMsgId}.parquet
-/// Schema: timestamp_us (long), msg_id (int), [tag1] (double?), [tag2] (double?), ...
+/// Schema: timestamp_ms (long, unix milliseconds), msg_id (int), [tag1] (double?), [tag2] (double?), ...
 /// </summary>
 public sealed class ParquetStorage
 {
@@ -27,21 +27,26 @@ public sealed class ParquetStorage
         Directory.CreateDirectory(_archivePath);
     }
 
-    /// <summary>Write a sealed chunk to Parquet — one file per DataKind present in the chunk.</summary>
-    public async Task WriteChunkAsync(Chunk chunk, bool archive = false)
+    /// <summary>Write a sealed chunk to Parquet — one file per DataKind present in the chunk.
+    /// Returns the list of file names written.</summary>
+    public async Task<List<string>> WriteChunkAsync(Chunk chunk, bool archive = false)
     {
         var dir = archive ? _archivePath : _diskPath;
+        var files = new List<string>();
 
         foreach (var kind in new[] { DataKind.Telemetry, DataKind.Event, DataKind.Alarm })
         {
             var values = chunk.GetValuesByKind(kind);
             if (values.Count == 0) continue;
 
-            await WriteKindFileAsync(dir, chunk, kind, values);
+            var fileName = await WriteKindFileAsync(dir, chunk, kind, values);
+            files.Add(fileName);
         }
+
+        return files;
     }
 
-    private static async Task WriteKindFileAsync(string dir, Chunk chunk, DataKind kind, IReadOnlyList<TagValue> values)
+    private static async Task<string> WriteKindFileAsync(string dir, Chunk chunk, DataKind kind, IReadOnlyList<TagValue> values)
     {
         // Group by timestamp to build rows — multiple tags at the same timestamp
         // become columns of the same row. msg_id tracks the max msgId per row.
@@ -50,17 +55,17 @@ public sealed class ParquetStorage
 
         foreach (var v in values)
         {
-            var tsUs = v.Timestamp.ToUnixTimeMilliseconds() * 1000;
+            var tsMs = v.Timestamp.ToUnixTimeMilliseconds();
 
-            if (!rows.TryGetValue(tsUs, out var row))
+            if (!rows.TryGetValue(tsMs, out var row))
             {
                 row = (v.MsgId, new Dictionary<string, object?>());
-                rows[tsUs] = row;
+                rows[tsMs] = row;
             }
             else if (v.MsgId > row.maxMsgId)
             {
                 row = (v.MsgId, row.tags);
-                rows[tsUs] = row;
+                rows[tsMs] = row;
             }
             row.tags[v.Tag] = v.Value;
             tagNames.Add(v.Tag);
@@ -69,10 +74,10 @@ public sealed class ParquetStorage
         var tagList = tagNames.ToList();
         var rowCount = rows.Count;
 
-        // Build schema: timestamp_us, msg_id, then one nullable double column per tag
+        // Build schema: timestamp_ms, msg_id, then one nullable double column per tag
         var fields = new List<Field>
         {
-            new DataField<long>("timestamp_us"),
+            new DataField<long>("timestamp_ms"),
             new DataField<int>("msg_id")
         };
 
@@ -124,6 +129,8 @@ public sealed class ParquetStorage
 
         for (int t = 0; t < tagList.Count; t++)
             await group.WriteColumnAsync(new DataColumn(schema.DataFields[t + 2], tagColumns[t]));
+
+        return fileName;
     }
 
     private static double ConvertToDouble(object val) => val switch
@@ -182,7 +189,7 @@ public sealed class ParquetStorage
                         Tag = tagName,
                         Kind = kind,
                         Value = values[i]!.Value,
-                        Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(tsCol[i] / 1000),
+                        Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(tsCol[i]),
                         MsgId = (uint)msgCol[i]
                     });
                 }
@@ -205,8 +212,8 @@ public sealed class ParquetStorage
 
         var (source, kind) = parsed.Value;
         var tagSet = new HashSet<string>(tags, StringComparer.OrdinalIgnoreCase);
-        long? fromUs = fromTs?.ToUnixTimeMilliseconds() * 1000;
-        long? toUs = toTs?.ToUnixTimeMilliseconds() * 1000;
+        long? fromMs = fromTs?.ToUnixTimeMilliseconds();
+        long? toMs = toTs?.ToUnixTimeMilliseconds();
 
         using var stream = File.OpenRead(filePath);
         using var reader = await ParquetReader.CreateAsync(stream);
@@ -231,8 +238,8 @@ public sealed class ParquetStorage
                 for (int i = 0; i < tsCol.Length; i++)
                 {
                     if (values[i] is null) continue;
-                    if (fromUs.HasValue && tsCol[i] < fromUs.Value) continue;
-                    if (toUs.HasValue && tsCol[i] > toUs.Value) continue;
+                    if (fromMs.HasValue && tsCol[i] < fromMs.Value) continue;
+                    if (toMs.HasValue && tsCol[i] > toMs.Value) continue;
 
                     result.Add(new TagValue
                     {
@@ -240,7 +247,7 @@ public sealed class ParquetStorage
                         Tag = tagName,
                         Kind = kind,
                         Value = values[i]!.Value,
-                        Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(tsCol[i] / 1000),
+                        Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(tsCol[i]),
                         MsgId = (uint)msgCol[i]
                     });
                 }
@@ -250,7 +257,7 @@ public sealed class ParquetStorage
         return result;
     }
 
-    /// <summary>Read legacy format (source,tag,kind,value_json,timestamp_us,msg_id).</summary>
+    /// <summary>Read legacy format (source,tag,kind,value_json,timestamp_ms,msg_id).</summary>
     private static async Task<IReadOnlyList<TagValue>> ReadLegacyFileAsync(string filePath)
     {
         using var stream = File.OpenRead(filePath);
@@ -280,7 +287,7 @@ public sealed class ParquetStorage
                     Tag = tagCol[i],
                     Kind = Enum.Parse<DataKind>(kindCol[i], true),
                     Value = value,
-                    Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(tsCol[i] / 1000),
+                    Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(tsCol[i]),
                     MsgId = (uint)msgCol[i]
                 });
             }

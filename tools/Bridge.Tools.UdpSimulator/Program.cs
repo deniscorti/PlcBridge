@@ -172,8 +172,8 @@ static byte[] BuildMetadataPacket(List<SimSource> sources, DateTimeOffset ts)
 
     offset += 4; // sourceId = 0
 
-    var usec = ts.ToUnixTimeMilliseconds() * 1000;
-    BitConverter.TryWriteBytes(buf.AsSpan(offset), usec);
+    var msec = ts.ToUnixTimeMilliseconds();
+    BitConverter.TryWriteBytes(buf.AsSpan(offset), msec);
     offset += 8;
 
     offset += 4 + 2; // sequence + reserved
@@ -223,8 +223,8 @@ static byte[] BuildDataPacket(SimSource source, uint seq, DateTimeOffset ts, Ran
     BitConverter.TryWriteBytes(buf.AsSpan(offset), sourceId);
     offset += 4;
 
-    var usec = ts.ToUnixTimeMilliseconds() * 1000;
-    BitConverter.TryWriteBytes(buf.AsSpan(offset), usec);
+    var msec = ts.ToUnixTimeMilliseconds();
+    BitConverter.TryWriteBytes(buf.AsSpan(offset), msec);
     offset += 8;
 
     BitConverter.TryWriteBytes(buf.AsSpan(offset), seq);

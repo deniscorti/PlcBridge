@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using Bridge.Core.Model;
+using Bridge.Core.Services;
 using Bridge.InterBridge.Protocol;
 using Microsoft.Extensions.Logging;
 
@@ -26,6 +27,8 @@ public sealed class UdpBridgeReceiver : IDisposable
     private readonly Dictionary<uint, Dictionary<uint, string>> _tagMaps = new();
     // Source enablement
     private readonly ConcurrentDictionary<string, bool> _enabledSources = new(StringComparer.OrdinalIgnoreCase);
+    private bool _autoDiscovery;
+    private SourceManager? _sourceManager;
 
     // Deduplication: sourceId → sliding window of seen msgIds
     private readonly ConcurrentDictionary<uint, HashSet<uint>> _seenMsgIds = new();
@@ -33,6 +36,9 @@ public sealed class UdpBridgeReceiver : IDisposable
 
     // Fragment reassembly: (sourceId, groupSeq, timestamp) → fragments
     private readonly ConcurrentDictionary<(uint, ushort, long), FragmentGroup> _fragments = new();
+
+    // Mapping packet assembly: (sourceId, groupSeq) → collected mapping packets
+    private readonly ConcurrentDictionary<(uint, ushort), MappingGroup> _pendingMappings = new();
 
     /// <summary>Fired when a fully reassembled tag value is received.</summary>
     public event Action<TagValue>? OnValue;
@@ -53,6 +59,13 @@ public sealed class UdpBridgeReceiver : IDisposable
         foreach (var (name, _) in tags)
             tagMap[Crc32.Compute(name)] = name;
         _tagMaps[sourceId] = tagMap;
+    }
+
+    /// <summary>Enable auto-discovery: accept any source from the UDP stream, auto-register in SourceManager.</summary>
+    public void EnableAutoDiscovery(SourceManager sourceManager)
+    {
+        _autoDiscovery = true;
+        _sourceManager = sourceManager;
     }
 
     public void SetSourceEnabled(string source, bool enabled) => _enabledSources[source] = enabled;
@@ -108,7 +121,14 @@ public sealed class UdpBridgeReceiver : IDisposable
     {
         if (!UdpProtocol.TryReadHeader(data, out var header)) return;
 
-        // Check source is known and enabled
+        // Handle mapping packets (source/tag name resolution)
+        if (header.IsMapping)
+        {
+            CollectMappingPacket(data, header);
+            return;
+        }
+
+        // Check source is known (must have received mapping first)
         if (!_sourceMap.TryGetValue(header.SourceId, out var sourceName)) return;
         if (_enabledSources.TryGetValue(sourceName, out var enabled) && !enabled) return;
 
@@ -121,9 +141,131 @@ public sealed class UdpBridgeReceiver : IDisposable
         ParsePayload(data.AsSpan(UdpProtocol.HeaderSize), header, sourceName);
     }
 
+    /// <summary>
+    /// Collect a mapping packet. Each packet carries:
+    /// [packetIdx:1][packetTotal:1][sourceNameLen:2][sourceName:N][tagCount:2][crc:4][nameLen:2][name:N]...
+    /// When all packetTotal packets for a given (sourceId, groupSeq) are received,
+    /// they are ordered by packetIdx and processed together.
+    /// </summary>
+    private void CollectMappingPacket(byte[] data, UdpPacketHeader header)
+    {
+        try
+        {
+            var payload = data.AsSpan(UdpProtocol.HeaderSize);
+            if (payload.Length < 2) return;
+
+            var packetIdx = payload[0];
+            var packetTotal = payload[1];
+
+            if (packetTotal == 0) return;
+
+            var key = (header.SourceId, header.GroupSeq);
+            var group = _pendingMappings.GetOrAdd(key, _ => new MappingGroup(packetTotal));
+
+            // Store the raw packet data
+            group.AddPacket(packetIdx, data);
+
+            if (!group.IsComplete) return;
+
+            // All packets received — remove from pending and process in order
+            _pendingMappings.TryRemove(key, out _);
+            ProcessCompleteMappingGroup(header.SourceId, group);
+
+            // Clean stale pending mappings (older than 30 seconds)
+            CleanStaleMappings();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to collect UDP mapping packet");
+        }
+    }
+
+    private void ProcessCompleteMappingGroup(uint sourceId, MappingGroup group)
+    {
+        string? sourceName = null;
+        var tagMap = new Dictionary<uint, string>();
+
+        foreach (var packetData in group.GetOrderedPackets())
+        {
+            var payload = packetData.AsSpan(UdpProtocol.HeaderSize);
+            if (payload.Length < 2) continue;
+
+            // Skip packetIdx + packetTotal
+            var offset = 2;
+
+            // Read source name
+            if (offset + 2 > payload.Length) continue;
+            var sourceNameLen = BinaryPrimitives.ReadUInt16LittleEndian(payload[offset..]);
+            offset += 2;
+            if (offset + sourceNameLen > payload.Length) continue;
+            sourceName = System.Text.Encoding.UTF8.GetString(payload.Slice(offset, sourceNameLen));
+            offset += sourceNameLen;
+
+            // Read tag count (in this packet)
+            if (offset + 2 > payload.Length) continue;
+            var tagCount = BinaryPrimitives.ReadUInt16LittleEndian(payload[offset..]);
+            offset += 2;
+
+            // Read tag entries
+            for (int i = 0; i < tagCount && offset + 6 <= payload.Length; i++)
+            {
+                var crc = BinaryPrimitives.ReadUInt32LittleEndian(payload[offset..]);
+                offset += 4;
+                var nameLen = BinaryPrimitives.ReadUInt16LittleEndian(payload[offset..]);
+                offset += 2;
+                if (offset + nameLen > payload.Length) break;
+                var tagName = System.Text.Encoding.UTF8.GetString(payload.Slice(offset, nameLen));
+                offset += nameLen;
+
+                tagMap[crc] = tagName;
+            }
+        }
+
+        if (sourceName is null) return;
+
+        // Register source mapping
+        var isNew = !_sourceMap.ContainsKey(sourceId);
+        _sourceMap[sourceId] = sourceName;
+
+        if (_autoDiscovery)
+            _enabledSources.TryAdd(sourceName, true);
+
+        // Count new tags vs existing
+        var existingMap = _tagMaps.GetValueOrDefault(sourceId);
+        var newTags = existingMap is null ? tagMap.Count : tagMap.Count(kv => !existingMap.ContainsKey(kv.Key));
+        _tagMaps[sourceId] = tagMap;
+
+        // Auto-register in SourceManager if discovery mode
+        if (_autoDiscovery && _sourceManager is not null)
+        {
+            var ds = _sourceManager.GetOrRegisterSource(sourceName);
+            foreach (var (_, tagName) in tagMap)
+            {
+                var tag = new Tag { Name = tagName, Kind = DataKind.Telemetry };
+                ds.TryRegisterTag(tag);
+            }
+        }
+
+        if (isNew || newTags > 0)
+        {
+            _logger.LogInformation("UDP mapping complete: source '{Source}' ({TagCount} tags, {NewTags} new)",
+                sourceName, tagMap.Count, newTags);
+        }
+    }
+
+    private void CleanStaleMappings()
+    {
+        // Remove pending mapping groups that haven't completed within 30 seconds
+        foreach (var key in _pendingMappings.Keys.ToList())
+        {
+            if (_pendingMappings.TryGetValue(key, out var group) && group.IsStale(30_000))
+                _pendingMappings.TryRemove(key, out _);
+        }
+    }
+
     private void HandleFragment(byte[] data, UdpPacketHeader header, string sourceName)
     {
-        var key = (header.SourceId, header.GroupSeq, header.TimestampUs);
+        var key = (header.SourceId, header.GroupSeq, header.TimestampMs);
         var group = _fragments.GetOrAdd(key, _ => new FragmentGroup(header.FragTotal));
 
         group.AddFragment(header.FragIdx, data);
@@ -154,7 +296,7 @@ public sealed class UdpBridgeReceiver : IDisposable
             _ => DataKind.Telemetry
         };
 
-        var ts = DateTimeOffset.FromUnixTimeMilliseconds(header.TimestampUs / 1000);
+        var ts = DateTimeOffset.FromUnixTimeMilliseconds(header.TimestampMs);
         var offset = 0;
         var recordIdx = 0u;
 
@@ -216,10 +358,10 @@ public sealed class UdpBridgeReceiver : IDisposable
 
     private void CleanStaleFragments()
     {
-        var nowUs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() * 1000;
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         foreach (var key in _fragments.Keys.ToList())
         {
-            if (nowUs - key.Item3 > 5_000_000) // 5 seconds
+            if (nowMs - key.Item3 > 5_000) // 5 seconds
                 _fragments.TryRemove(key, out _);
         }
     }
@@ -253,4 +395,36 @@ internal sealed class FragmentGroup
     public bool IsComplete => _received == _fragments.Length;
 
     public IEnumerable<byte[]> GetOrderedFragments() => _fragments.Where(f => f is not null)!;
+}
+
+/// <summary>
+/// Collects mapping packets by packetIdx until all packetTotal packets are received.
+/// </summary>
+internal sealed class MappingGroup
+{
+    private readonly byte[][] _packets;
+    private int _received;
+    private readonly long _createdMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+    public MappingGroup(byte packetTotal)
+    {
+        _packets = new byte[packetTotal][];
+    }
+
+    public void AddPacket(byte idx, byte[] data)
+    {
+        if (idx < _packets.Length && _packets[idx] is null)
+        {
+            _packets[idx] = data;
+            Interlocked.Increment(ref _received);
+        }
+    }
+
+    public bool IsComplete => _received == _packets.Length;
+
+    public bool IsStale(long maxAgeMs)
+        => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - _createdMs > maxAgeMs;
+
+    /// <summary>Returns packets ordered by packetIdx.</summary>
+    public IEnumerable<byte[]> GetOrderedPackets() => _packets.Where(p => p is not null)!;
 }

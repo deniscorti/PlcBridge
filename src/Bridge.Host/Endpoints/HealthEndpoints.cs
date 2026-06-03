@@ -14,7 +14,7 @@ public static class HealthEndpoints
         app.MapGet("/health", (IOptions<BridgeOptions> opts) =>
         {
             var uptime = (long)(DateTimeOffset.UtcNow - StartTime).TotalSeconds;
-            return Results.Ok(new HealthDto("ok", opts.Value.Mode.ToString(), uptime));
+            return Results.Ok(new HealthDto("ok", opts.Value.Mode ?? "Unknown", uptime));
         });
 
         app.MapGet("/api/status", (IOptions<BridgeOptions> opts, SourceManager mgr) =>
@@ -25,7 +25,7 @@ public static class HealthEndpoints
                 var input = mgr.GetInputForSource(s.Id);
                 return new SourceStatusDto(s.Id, input?.IsConnected ?? false, s.Tags.Count);
             }).ToList();
-            return Results.Ok(new StatusDto(opts.Value.Mode.ToString(), uptime, sources));
+            return Results.Ok(new StatusDto(opts.Value.Mode ?? "Unknown", uptime, sources));
         });
 
         return app;

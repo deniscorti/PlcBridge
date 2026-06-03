@@ -6,6 +6,16 @@ e il versionamento [SemVer](https://semver.org/lang/it/).
 
 ## [Unreleased]
 
+### Changed — Progetti separati per modalità
+- Separato `Bridge.Host` (ora libreria condivisa) in 3 progetti eseguibili: `Bridge.DataProvider`, `Bridge.DataService`, `Bridge.DataServer`
+- Ogni progetto ha il proprio `appsettings.json` con tutte le sezioni e flag `Enabled` (true/false)
+- Non serve più `ASPNETCORE_ENVIRONMENT` per selezionare la modalità — ogni progetto SA cosa è
+- Aggiunto campo `Enabled` a: `DataSourceOptions`, `SourceConnectionOptions`, `BufferOptions`, `UdpReceiverOptions`
+- `BridgeMode` enum rimosso — `Mode` è ora stringa opzionale (solo per endpoint /health)
+- DataServer ora salva automaticamente i chunk ricevuti via chunk transfer come Parquet in `ParquetArchivePath`
+- Debug semplificato: si lancia direttamente il progetto desiderato
+- Aggiornata documentazione: architecture.md, configuration.md, configurations.md, testing.md, riepilogo-modalita.md
+
 ### Added — Fase 1: DataProvider con MockInput
 - Struttura progetto: Bridge.Core, Bridge.Inputs, Bridge.Contracts, Bridge.InterBridge, Bridge.Storage, Bridge.Host
 - Modello di dominio: DataSource, Tag, TagValue, DataKind (Telemetry/Event/Alarm), AlarmState (ISA-18.2), BridgeMode
@@ -49,8 +59,23 @@ e il versionamento [SemVer](https://semver.org/lang/it/).
 - UpstreamSubscriptionAggregator: ref-counting per tag, debounce 80ms, "ALL" short-circuit
 - Backfill automatico (queryTelemetry ultimi N minuti) quando un tag passa 0→1
 - Re-push sottoscrizioni su reconnect WsClient
-- BridgeWsClient: SubscribeTagsAsync, UnsubscribeTagsAsync, QueryTelemetryAsync, OnConnected event
+- BridgeWsClient: SubscribeTagsAsync(tags, source), UnsubscribeTagsAsync(tags, source), QueryTelemetryAsync(tags, from, to, source), OnConnected event
 - Config: SelectiveSubscription (bool), BackfillMinutes (int)
+
+### Changed — Rimosso DataSource da Sources config
+- Rimosso campo `DataSource` da `SourceConnectionOptions` e `UdpReceiverSourceOptions`
+- Rimosso `SubscribeTags` (stringa) — sostituito con `AutoDiscovery` (bool) + `Tags` (string[])
+- `UdpReceiverOptions`: rimosso `Sources[]` array — sostituito con `AutoDiscovery` + `Tags` a livello receiver
+- `BridgeWsClientOptions`: rimosso `DataSource` — il SourceId ora deriva da `Id`
+- I messaggi WS (subscribe, unsubscribe, queryTelemetry) ora passano `source` come il nome reale della source scoperta via `getSources`, non piu' il nome della connessione
+- Struttura config uniforme tra WS e UDP: `AutoDiscovery: true` per scoprire tutto, `Tags: []` per lista esplicita
+
+### Added — UDP Mapping Protocol
+- Nuovo tipo pacchetto UDP: FlagMapping (0x20) per risoluzione nomi CRC32 → nome
+- UdpBridgeSender: `StartMappingBroadcast()` invia periodicamente (10s) pacchetti mapping con source name + tag CRC→name
+- UdpBridgeReceiver: colleziona mapping packets per `packetIdx/packetTotal`, processa quando completi
+- Il canale UDP e' completamente autosufficiente — non richiede WS o REST per la risoluzione dei nomi
+- MappingGroup: buffer per raccogliere pacchetti mapping multi-part con timeout 30s per gruppi incompleti
 
 ### Added — Compact Push Protocol
 - CompactLayoutManager: gestione layout posizionali per-connessione, layoutId versioning

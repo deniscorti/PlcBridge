@@ -20,6 +20,7 @@ public static class UdpProtocol
     public const byte FlagFragmented = 0x04;
     public const byte FlagCompressed = 0x08;
     public const byte FlagMetadata = 0x10;
+    public const byte FlagMapping = 0x20;
 
     // Value types
     public const byte TypeFloat32 = 0x01;
@@ -43,14 +44,14 @@ public static class UdpProtocol
 
     /// <summary>Write the 24-byte packet header.</summary>
     public static void WriteHeader(Span<byte> buf, byte flags, uint sourceId,
-        long timestampUs, ushort groupSeq, byte fragIdx, byte fragTotal, uint msgIdBase)
+        long timestampMs, ushort groupSeq, byte fragIdx, byte fragTotal, uint msgIdBase)
     {
         buf[0] = (byte)(Magic >> 8);
         buf[1] = (byte)(Magic & 0xFF);
         buf[2] = Version;
         buf[3] = flags;
         System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(buf[4..], sourceId);
-        System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(buf[8..], timestampUs);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt64LittleEndian(buf[8..], timestampMs);
         System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(buf[16..], groupSeq);
         buf[18] = fragIdx;
         buf[19] = fragTotal;
@@ -69,7 +70,7 @@ public static class UdpProtocol
             Version = buf[2],
             Flags = buf[3],
             SourceId = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(buf[4..]),
-            TimestampUs = System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(buf[8..]),
+            TimestampMs = System.Buffers.Binary.BinaryPrimitives.ReadInt64LittleEndian(buf[8..]),
             GroupSeq = System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(buf[16..]),
             FragIdx = buf[18],
             FragTotal = buf[19],
@@ -84,7 +85,7 @@ public struct UdpPacketHeader
     public byte Version;
     public byte Flags;
     public uint SourceId;
-    public long TimestampUs;
+    public long TimestampMs;
     public ushort GroupSeq;
     public byte FragIdx;
     public byte FragTotal;
@@ -94,4 +95,5 @@ public struct UdpPacketHeader
     public readonly bool IsFragmented => (Flags & 0x04) != 0;
     public readonly bool IsCompressed => (Flags & 0x08) != 0;
     public readonly bool IsMetadata => (Flags & 0x10) != 0;
+    public readonly bool IsMapping => (Flags & 0x20) != 0;
 }

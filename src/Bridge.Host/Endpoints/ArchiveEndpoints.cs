@@ -100,6 +100,20 @@ public static class ArchiveEndpoints
             return Results.Ok(new { loaded = allValues.Count, files = files.Count, source = req.Source, fromTs = actualFrom, toTs = actualTo });
         });
 
+        // Download a Parquet file by name (used by DataServer for chunk transfer via HTTP)
+        // Uses query parameter ?file=xxx.parquet to avoid ASP.NET routing issues with dots in path
+        g.MapGet("/archives/download", (string file, [FromServices] ParquetStorage? storage) =>
+        {
+            if (storage is null) return Results.BadRequest(new { error = "STORAGE_DISABLED" });
+            if (string.IsNullOrEmpty(file)) return Results.BadRequest(new { error = "MISSING_FILE_PARAM" });
+
+            var path = storage.ResolvePath(file);
+            if (path is null) return Results.NotFound(new { error = "FILE_NOT_FOUND", file });
+
+            var fullPath = Path.GetFullPath(path);
+            return Results.File(fullPath, "application/octet-stream", file);
+        });
+
         return app;
     }
 }

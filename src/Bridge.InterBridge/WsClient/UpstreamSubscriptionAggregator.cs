@@ -64,27 +64,33 @@ public sealed class UpstreamSubscriptionAggregator : IDisposable
         client.OnConnected += OnClientReconnected;
     }
 
-    /// <summary>Called when a WS client reconnects — re-push current subscription set.</summary>
+    /// <summary>Called when a WS client reconnects — re-push current subscription set for all sources this client serves.</summary>
     private void OnClientReconnected(BridgeWsClient client)
     {
         _ = Task.Run(async () =>
         {
             try
             {
-                IReadOnlyList<string> tags;
+                // Find all sources this client is registered for
+                List<(string sourceId, List<string> tags)> toResub;
                 lock (_lock)
                 {
-                    if (!_upstreamTags.TryGetValue(client.SourceId, out var set) || set.Count == 0)
-                        return;
-                    tags = set.ToList();
+                    toResub = _clients
+                        .Where(kv => kv.Value == client)
+                        .Select(kv => (kv.Key, _upstreamTags.GetValueOrDefault(kv.Key)?.ToList() ?? []))
+                        .Where(x => x.Item2.Count > 0)
+                        .ToList();
                 }
 
-                _logger.LogInformation("Re-subscribing {Count} tags on reconnect for source {Source}", tags.Count, client.SourceId);
-                await client.SubscribeTagsAsync(tags);
+                foreach (var (sourceId, tags) in toResub)
+                {
+                    _logger.LogInformation("Re-subscribing {Count} tags on reconnect for source {Source}", tags.Count, sourceId);
+                    await client.SubscribeTagsAsync(tags, sourceId);
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to re-subscribe on reconnect for source {Source}", client.SourceId);
+                _logger.LogWarning(ex, "Failed to re-subscribe on reconnect for client {ClientId}", client.SourceId);
             }
         });
     }
@@ -232,13 +238,13 @@ public sealed class UpstreamSubscriptionAggregator : IDisposable
             if (toRemove.Count > 0)
             {
                 _logger.LogInformation("Upstream unsubscribe {Source}: -{Tags}", sourceId, string.Join(",", toRemove));
-                await client.UnsubscribeTagsAsync(toRemove);
+                await client.UnsubscribeTagsAsync(toRemove, sourceId);
             }
 
             if (toAdd.Count > 0)
             {
                 _logger.LogInformation("Upstream subscribe {Source}: +{Tags}", sourceId, string.Join(",", toAdd));
-                await client.SubscribeTagsAsync(toAdd);
+                await client.SubscribeTagsAsync(toAdd, sourceId);
 
                 // Backfill newly subscribed tags (skip if "ALL" — too much data)
                 if (_backfillMinutes > 0 && !toAdd.Contains("ALL"))
@@ -261,7 +267,7 @@ public sealed class UpstreamSubscriptionAggregator : IDisposable
             var from = to.AddMinutes(-_backfillMinutes);
 
             _logger.LogDebug("Backfilling {Count} tags for source {Source} ({Minutes}min)", tags.Length, sourceId, _backfillMinutes);
-            var response = await client.QueryTelemetryAsync(tags, from, to);
+            var response = await client.QueryTelemetryAsync(tags, from, to, sourceId);
 
             // Parse response and feed into buffer
             if (response.TryGetProperty("data", out var dataProp) && dataProp.ValueKind == JsonValueKind.Array)

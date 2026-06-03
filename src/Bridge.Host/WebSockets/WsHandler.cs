@@ -340,7 +340,7 @@ public static class WsHandler
                 var paramsJson = sc.Params is not null
                     ? JsonSerializer.SerializeToElement(sc.Params)
                     : (JsonElement?)null;
-                var result = await client.SendCommandAsync(sc.Command, paramsJson);
+                var result = await client.SendCommandAsync(sc.Command, sc.Source, paramsJson);
                 await connMgr.SendAsync(connId, new WsResponse
                 {
                     Id = sc.Id, Ok = true,

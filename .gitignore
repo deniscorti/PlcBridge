@@ -37,3 +37,5 @@ secrets.json
 logs/
 *.log
 src/Bridge.Host/data/
+src/Bridge.DataServer/data/
+src/Bridge.DataService/data/

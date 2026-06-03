@@ -13,13 +13,13 @@ Autenticazione unificata per REST e WS:
 
 Base URL: `http://<host>:<port>/api`
 
-### Risorse e DataSource
+### Risorse e Source
 
 | Metodo | Path                                          | Descrizione                       | Modalità |
 |--------|-----------------------------------------------|-----------------------------------|----------|
 | GET    | `/health`                                     | Health check + mode + uptime      | Tutte |
-| GET    | `/sources`                                    | Elenco DataSource disponibili     | Tutte |
-| GET    | `/sources/{source}/tags`                      | Elenco tag nel DataSource         | Tutte |
+| GET    | `/sources`                                    | Elenco source disponibili         | Tutte |
+| GET    | `/sources/{source}/tags`                      | Elenco tag nella source           | Tutte |
 | GET    | `/sources/{source}/tags/{name}`               | Lettura valore corrente           | Tutte |
 | POST   | `/sources/{source}/tags/{name}`               | Scrittura valore. Body: `{ "value": ... }` | Tutte |
 
@@ -131,8 +131,8 @@ Ogni messaggio client→server porta un campo `id` (opzionale) per correlare la 
 ```jsonc
 // === Sottoscrizioni ===
 { "op": "subscribe",   "id": "s1", "source": "linea1", "tags": ["temperature", "pressure"] }
-{ "op": "subscribe",   "id": "s2", "source": "linea1", "tags": ["ALL"] }           // tutto il DataSource
-{ "op": "subscribe",   "id": "s3", "tags": ["ALL"] }                                // tutti i DataSource
+{ "op": "subscribe",   "id": "s2", "source": "linea1", "tags": ["ALL"] }           // tutta la source
+{ "op": "subscribe",   "id": "s3", "tags": ["ALL"] }                                // tutte le source
 { "op": "subscribe",   "id": "s4", "source": "linea1", "kinds": ["alarm"] }         // tutti gli allarmi di un source
 { "op": "subscribe",   "id": "s5", "kinds": ["alarm"] }                              // tutti gli allarmi di tutti i source
 { "op": "subscribe",   "id": "s6", "source": "linea1", "tags": ["ALL"], "since": 100230 }  // con recovery (inter-bridge)
@@ -308,7 +308,7 @@ Ogni messaggio client→server porta un campo `id` (opzionale) per correlare la 
     { "source": "linea1", "tag": "pressure", "kind": "telemetry", "value": 1.02, "ts": "...", "msgId": 100001 }
   ]
 }
-// Il DataServer deserializza i record, crea un chunk Full, lo inserisce nel buffer e lo salva su Parquet
+// Il DataServer deserializza i record, crea un chunk Full, lo inserisce nel buffer in memoria e lo salva come Parquet nell'archivio (ParquetArchivePath)
 
 // === Recovery inter-bridge (per gap nello stream live) ===
 { "type": "recoveryStart", "source": "linea1", "fromMsgId": 100230, "toMsgId": 100234 }

@@ -1,9 +1,11 @@
 # Guida alle Configurazioni Bridge
 
-Questa guida elenca tutte le possibili configurazioni per i tre modi operativi:
-**DataProvider**, **DataService** e **DataServer**.
+Ogni modalità operativa ha il proprio **progetto separato**: `Bridge.DataProvider`, `Bridge.DataService`, `Bridge.DataServer`.
+Ognuno si lancia con `dotnet run --project src/Bridge.DataXxx` e ha il proprio `appsettings.json`.
 
-Ogni sezione mostra le combinazioni di input/output supportate con il relativo `appsettings.json`.
+Ogni `appsettings.json` contiene **tutte le sezioni possibili** con un flag `Enabled` (true/false) per attivare/disattivare ogni funzionalità. Le sezioni con `Enabled: false` sono ignorate ma restano visibili come riferimento.
+
+Questa guida elenca le combinazioni di configurazione più comuni.
 
 ## Porte: regola fondamentale
 
@@ -338,7 +340,7 @@ Simulatore UDP ──► DataService [buffer 60min in RAM] ──WS/REST──�
 
 ### S2c — All-in-one con Auto-Discovery (zero configurazione tag)
 
-Come S2b ma con `AutoDiscovery: true`: il simulatore UDP invia un pacchetto di metadata ogni 10 secondi con la lista di DataSource e tag. Il DataService li registra automaticamente — **nessun tag da configurare manualmente**.
+Come S2b ma con `AutoDiscovery: true`: il simulatore UDP invia un pacchetto di metadata ogni 10 secondi con la lista di source e tag. Il DataService li registra automaticamente — **nessun tag da configurare manualmente**.
 
 ```jsonc
 {
@@ -373,8 +375,8 @@ Come S2b ma con `AutoDiscovery: true`: il simulatore UDP invia un pacchetto di m
 
 | Aspetto | Dettaglio |
 |---------|-----------|
-| **Metadata** | Il simulatore invia ogni 10s un pacchetto con la struttura dei DataSource e tag |
-| **Auto-registrazione** | Al ricevere il metadata, il DataService crea i DataSource (es. "Temperatures", "Pressures", "Production") e registra i tag con il DataKind corretto |
+| **Metadata** | Il simulatore invia ogni 10s un pacchetto con la struttura delle source e tag |
+| **Auto-registrazione** | Al ricevere il metadata, il DataService crea le source (es. "Temperatures", "Pressures", "Production") e registra i tag con il DataKind corretto |
 | **Nessun tag manuale** | La sezione `Tags` in configurazione è vuota — tutto arriva dal metadata |
 | **Live stream** | Funziona identicamente a S2b dopo la prima ricezione del metadata |
 | **Aggiunta tag** | Se il simulatore aggiunge nuovi tag al metadata, vengono registrati al volo |
@@ -387,9 +389,9 @@ Simulatore UDP ──metadata (10s)──► DataService [auto-registra Sources+
                                                     └── Parquet (write-only)
 ```
 
-**DataSource creati dal simulatore di default:**
+**Source create dal simulatore di default:**
 
-| DataSource | Tag | Tipo |
+| Source | Tag | Tipo |
 |------------|-----|------|
 | Temperatures | temp_zone1, temp_zone2, temp_zone3, temp_ambient | Telemetry |
 | | overtemp_zone1, overtemp_zone2 | Alarm |
@@ -421,10 +423,10 @@ Il DataService si collega come client WS a un DataProvider remoto.
     "Sources": [
       {
         "Id": "from-provider",
-        "DataSource": "linea1",
         "Url": "ws://192.168.0.50:5080/ws",
         "ApiKey": "provider-secret",
-        "SubscribeTags": "ALL",
+        "AutoDiscovery": true,
+        "Tags": [],
         "ForwardIntervalMs": 2000,
         "BatchMode": true,
         "ChunkSync": true,
@@ -437,7 +439,7 @@ Il DataService si collega come client WS a un DataProvider remoto.
 
 **Flusso:** `PLC ──► DataProvider ──WS──► DataService [buffer + Parquet] ──WS/REST──► Client`
 
-> **Auto-Discovery WS:** alla connessione, il DataService invia automaticamente un messaggio `getSources` all'upstream per scoprire DataSource e tag disponibili (nome + DataKind). Non serve configurare i tag manualmente — basta specificare `DataSource` e `Url`.
+> **Auto-Discovery WS:** con `AutoDiscovery: true`, alla connessione il nodo invia automaticamente `getSources` all'upstream per scoprire source e tag disponibili (nome + DataKind). Non serve configurare i tag manualmente — basta specificare `Url`. Con `AutoDiscovery: false`, si usa `Tags: ["tag1", "tag2"]` per una lista esplicita.
 
 ---
 
@@ -459,7 +461,6 @@ Il DataService riceve dati via WS e li inoltra anche via UDP (best-effort, bassa
     "Sources": [
       {
         "Id": "from-provider",
-        "DataSource": "linea1",
         "Url": "ws://provider:5080/ws",
         "ApiKey": "secret",
         "ForwardIntervalMs": 2000,
@@ -525,7 +526,6 @@ Un DataService che gestisce sia un input diretto che un upstream.
     "Sources": [
       {
         "Id": "from-remote",
-        "DataSource": "linea2",
         "Url": "ws://remote-provider:5080/ws",
         "ApiKey": "remote-key",
         "ForwardIntervalMs": 2000
@@ -546,7 +546,7 @@ PLC remoto ──► Provider ──WS──┘
 
 ## DataServer
 
-Il DataServer è lo storicizzatore finale. Si collega come client a uno o più DataService/DataProvider, riceve dati via WS e/o UDP, gestisce buffer ampi e supporta replay. **Non scrive Parquet** — i dati Full ricevuti via chunk transfer restano in memoria. Può **caricare** archivi Parquet (formato wide) prodotti dal DataService per analisi offline.
+Il DataServer è lo storicizzatore finale. Si collega come client a uno o più DataService/DataProvider, riceve dati via WS e/o UDP, gestisce buffer ampi e supporta replay. **Salva automaticamente** i chunk ricevuti via chunk transfer come file Parquet in `ParquetArchivePath`. Può anche **caricare** archivi Parquet aggiuntivi (prodotti dal DataService o copiati manualmente) per analisi offline.
 
 ### V1 — Da DataService via WebSocket
 
@@ -567,7 +567,6 @@ Configurazione base: il DataServer riceve tutto via WebSocket.
     "Sources": [
       {
         "Id": "service-linea1",
-        "DataSource": "linea1",
         "Url": "wss://dataservice:5081/ws",
         "ApiKey": "service-key",
         "ChunkSync": true,
@@ -581,7 +580,7 @@ Configurazione base: il DataServer riceve tutto via WebSocket.
 
 **Flusso:** `DataService ──WS (live + chunk)──► DataServer [buffer 5h] ──WS/REST──► Dashboard`
 
-> **Auto-Discovery WS:** alla connessione, il DataServer invia `getSources` all'upstream per scoprire automaticamente DataSource e tag. Non serve pre-configurare i tag — il discovery avviene ad ogni (ri)connessione.
+> **Auto-Discovery WS:** con `AutoDiscovery: true`, alla connessione il DataServer invia `getSources` all'upstream per scoprire automaticamente source e tag. Non serve pre-configurare i tag — il discovery avviene ad ogni (ri)connessione. Per UDP: il sender invia periodicamente pacchetti mapping con le corrispondenze CRC32 → nome, rendendo il canale UDP completamente autosufficiente.
 
 ---
 
@@ -604,7 +603,6 @@ Doppio canale: WS per affidabilità e chunk transfer, UDP per bassa latenza. Il 
     "Sources": [
       {
         "Id": "service-linea1",
-        "DataSource": "linea1",
         "Url": "wss://dataservice:5081/ws",
         "ApiKey": "service-key",
         "ChunkSync": true,
@@ -613,9 +611,8 @@ Doppio canale: WS per affidabilità e chunk transfer, UDP per bassa latenza. Il 
     ],
     "UdpReceiver": {
       "ListenPort": 9200,
-      "Sources": [
-        { "DataSource": "linea1", "Enabled": true }
-      ]
+      "AutoDiscovery": true,
+      "Tags": []
     }
   }
 }
@@ -648,7 +645,6 @@ Un DataServer centralizzato che aggrega più linee produttive.
     "Sources": [
       {
         "Id": "service-linea1",
-        "DataSource": "linea1",
         "Url": "wss://service-l1:5081/ws",
         "ApiKey": "key-l1",
         "ChunkSync": true,
@@ -656,7 +652,6 @@ Un DataServer centralizzato che aggrega più linee produttive.
       },
       {
         "Id": "service-linea2",
-        "DataSource": "linea2",
         "Url": "wss://service-l2:5081/ws",
         "ApiKey": "key-l2",
         "ChunkSync": true,
@@ -664,7 +659,6 @@ Un DataServer centralizzato che aggrega più linee produttive.
       },
       {
         "Id": "service-pressa",
-        "DataSource": "pressa",
         "Url": "wss://service-pressa:5081/ws",
         "ApiKey": "key-pressa",
         "ChunkSync": true
@@ -672,11 +666,8 @@ Un DataServer centralizzato che aggrega più linee produttive.
     ],
     "UdpReceiver": {
       "ListenPort": 9200,
-      "Sources": [
-        { "DataSource": "linea1", "Enabled": true },
-        { "DataSource": "linea2", "Enabled": true },
-        { "DataSource": "pressa", "Enabled": true }
-      ]
+      "AutoDiscovery": true,
+      "Tags": []
     }
   }
 }
@@ -709,7 +700,6 @@ Per scenari semplici dove non serve persistenza intermedia. Il DataServer si col
     "Sources": [
       {
         "Id": "direct-provider",
-        "DataSource": "linea1",
         "Url": "ws://provider:5080/ws",
         "ApiKey": "provider-key",
         "ChunkSync": false
@@ -727,40 +717,56 @@ Per scenari semplici dove non serve persistenza intermedia. Il DataServer si col
 
 ## Auto-Discovery dei tag
 
-Il Bridge supporta due meccanismi di auto-discovery che eliminano la necessità di configurare manualmente i tag in `appsettings.json`:
+Il Bridge supporta tre meccanismi di auto-discovery che eliminano la necessita' di configurare manualmente i tag in `appsettings.json`. Tutti si attivano con `AutoDiscovery: true` nella sezione corrispondente.
 
-### Via UDP (input diretto)
+### Via UDP Input (input diretto da PLC)
 
-Quando `AutoDiscovery: true` è impostato su un input UDP, il mittente (simulatore o DataProvider) invia periodicamente un **pacchetto metadata** (flag `0x10`) contenente la struttura completa dei DataSource e dei tag (nome + DataKind).
+Quando `AutoDiscovery: true` e' impostato su un input UDP (`DataSources[].Inputs[]`), il mittente (simulatore o DataProvider) invia periodicamente un **pacchetto metadata** (flag `0x10`) contenente la struttura completa dei source e tag (nome + DataKind).
 
 | Aspetto | Dettaglio |
 |---------|-----------|
 | **Frequenza** | Ogni 10 secondi (configurabile nel simulatore) |
 | **Formato** | Binario, stesso header del protocollo custom-v1 con flag `0x10` |
-| **Contenuto** | Lista di DataSource, ognuno con i suoi tag (nome + kind) |
-| **Registrazione** | I nuovi DataSource/tag vengono registrati al volo; quelli già esistenti vengono ignorati |
+| **Contenuto** | Lista di source, ognuno con i suoi tag (nome + kind) |
+| **Registrazione** | I nuovi source/tag vengono registrati al volo; quelli gia' esistenti vengono ignorati |
 | **Configurazione** | `"AutoDiscovery": true` nell'input UDP — nessun tag da elencare |
+
+### Via UDP Inter-Bridge (DataService → DataServer)
+
+Quando `AutoDiscovery: true` e' impostato su `UdpReceiver`, il **sender** (DataService) invia periodicamente pacchetti **mapping** (flag `0x20`) con le corrispondenze CRC32 → nome per source e tag. Il canale UDP e' completamente autosufficiente — non richiede WS o REST per la risoluzione dei nomi.
+
+| Aspetto | Dettaglio |
+|---------|-----------|
+| **Frequenza** | Ogni 10 secondi (automatico) |
+| **Formato** | Binario, header con `FlagMapping = 0x20` + payload con `packetIdx/packetTotal` |
+| **Contenuto** | Nome source + lista tag (CRC32 + nome in chiaro) |
+| **Multi-pacchetto** | Se i tag sono troppi per un pacchetto, vengono divisi in piu' pacchetti con `packetIdx/packetTotal` |
+| **Registrazione** | Il receiver colleziona tutti i pacchetti, li ordina per `packetIdx`, registra source e tag |
+| **Configurazione** | `"AutoDiscovery": true` nel `UdpReceiver` — nessun tag da elencare |
 
 ### Via WebSocket (upstream)
 
-Quando un nodo si connette come client WS a un upstream (DataProvider o DataService), invia automaticamente un messaggio **`getSources`** per ottenere la lista dei DataSource e tag esposti dall'upstream.
+Quando `AutoDiscovery: true` e' impostato su `Sources[]`, alla connessione il nodo invia automaticamente **`getSources`** per ottenere la lista dei source e tag esposti dall'upstream.
 
 | Aspetto | Dettaglio |
 |---------|-----------|
 | **Quando** | Ad ogni connessione e riconnessione |
 | **Formato** | JSON via WebSocket (`op: "getSources"`) |
 | **Risposta** | Lista di source con tag (nome + DataKind) e info buffer |
-| **Registrazione** | I tag scoperti vengono registrati nel DataSource locale |
-| **Configurazione** | Nessuna — il discovery è automatico per tutti i client WS upstream |
+| **Registrazione** | I tag scoperti vengono registrati nel source locale |
+| **Configurazione** | `"AutoDiscovery": true` in `Sources[]` |
+
+Con `AutoDiscovery: false`, si specifica `Tags: ["tag1", "tag2"]` per una lista esplicita di tag da sottoscrivere.
 
 ### Confronto
 
-| | UDP Metadata | WS getSources |
-|---|---|---|
-| **Usato da** | DataProvider/DataService con input UDP diretto | DataService/DataServer collegati a upstream |
-| **Richiede config** | `AutoDiscovery: true` | Nessuna (sempre attivo) |
-| **Direzione** | Push (il mittente invia periodicamente) | Pull (il client chiede alla connessione) |
-| **Multi-source** | Sì (un pacchetto contiene N DataSource) | Sì (la risposta contiene tutti i source) |
+| | UDP Input Metadata | UDP Inter-Bridge Mapping | WS getSources |
+|---|---|---|---|
+| **Usato da** | Input diretto da PLC | DataServer (riceve da DataService) | DataService/DataServer collegati a upstream |
+| **Richiede config** | `AutoDiscovery: true` su input | `AutoDiscovery: true` su UdpReceiver | `AutoDiscovery: true` su Sources |
+| **Direzione** | Push (mittente invia periodicamente) | Push (sender invia periodicamente) | Pull (il client chiede alla connessione) |
+| **Formato** | Binario flag `0x10` | Binario flag `0x20` + `packetIdx/packetTotal` | JSON `op: "getSources"` |
+| **Autosufficiente** | Si' | Si' (niente WS/REST necessario) | Si' |
 
 ---
 

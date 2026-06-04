@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "Bridge.Host": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:63409;http://localhost:63413"
+    }
+  }
+}

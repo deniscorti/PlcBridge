@@ -1,5 +1,0 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-# Solution stub - rigenerare con:
-#   dotnet new sln -n PlcBridge
-#   dotnet sln add (ls -r **/*.csproj)

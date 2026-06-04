@@ -1,5 +1,0 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <ItemGroup>
-    <ProjectReference Include="..\PlcBridge.Core\PlcBridge.Core.csproj" />
-  </ItemGroup>
-</Project>

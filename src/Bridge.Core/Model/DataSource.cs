@@ -16,11 +16,15 @@ public sealed class DataSource
 
     public IReadOnlyDictionary<string, Tag> Tags => _tags;
 
+    /// <summary>Fired when a new tag is registered in this source. Args: (sourceId, tag).</summary>
+    public event Action<string, Tag>? OnTagRegistered;
+
     public void RegisterTag(Tag tag)
     {
         if (!_tags.TryAdd(tag.Name, tag))
             throw new InvalidOperationException($"Tag '{tag.Name}' already registered in source '{Id}'.");
         tag.TagId = Crc32.Compute(tag.Name);
+        OnTagRegistered?.Invoke(Id, tag);
     }
 
     public bool TryRegisterTag(Tag tag)
@@ -28,6 +32,7 @@ public sealed class DataSource
         if (!_tags.TryAdd(tag.Name, tag))
             return false;
         tag.TagId = Crc32.Compute(tag.Name);
+        OnTagRegistered?.Invoke(Id, tag);
         return true;
     }
 

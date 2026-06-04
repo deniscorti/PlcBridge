@@ -21,6 +21,7 @@ namespace Bridge.Contracts.Ws;
 [JsonDerivedType(typeof(WsReplay), "replay")]
 [JsonDerivedType(typeof(WsReplayStop), "replayStop")]
 [JsonDerivedType(typeof(WsChunkRequest), "chunkRequest")]
+[JsonDerivedType(typeof(WsLoadChannels), "loadChannels")]
 public abstract record WsClientMessage
 {
     [JsonPropertyName("id")]
@@ -125,6 +126,17 @@ public sealed record WsChunkRequest : WsClientMessage
 {
     public required string Source { get; init; }
     public required string ChunkId { get; init; }
+}
+
+public sealed record WsLoadChannels : WsClientMessage
+{
+    public required string Source { get; init; }
+    public string[]? Tags { get; init; }
+    public required string From { get; init; }
+    public required string To { get; init; }
+
+    /// <summary>Max points per tag. If set, applies min-max bucketing downsampling. Null = all points.</summary>
+    public int? Resolution { get; init; }
 }
 
 // ── Server → Client ──

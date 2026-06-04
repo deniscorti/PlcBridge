@@ -19,6 +19,9 @@ public sealed class SourceManager : IAsyncDisposable
     /// <summary>Fired when a new TagValue arrives from any input.</summary>
     public event Action<TagValue>? OnValue;
 
+    /// <summary>Fired when a source or its tags change (new source registered, or new tag added). Args: sourceId.</summary>
+    public event Action<string>? OnSourceChanged;
+
     public SourceManager(ISubscriptionBroker broker)
     {
         _broker = broker;
@@ -32,13 +35,21 @@ public sealed class SourceManager : IAsyncDisposable
         var ds = new DataSource { Id = id };
         if (!_sources.TryAdd(id, ds))
             throw new InvalidOperationException($"DataSource '{id}' already registered.");
+        ds.OnTagRegistered += (sourceId, _) => OnSourceChanged?.Invoke(sourceId);
+        OnSourceChanged?.Invoke(id);
         return ds;
     }
 
     /// <summary>Register or get existing source (for inter-bridge where source is auto-created).</summary>
     public DataSource GetOrRegisterSource(string id)
     {
-        return _sources.GetOrAdd(id, _ => new DataSource { Id = id });
+        return _sources.GetOrAdd(id, _ =>
+        {
+            var ds = new DataSource { Id = id };
+            ds.OnTagRegistered += (sourceId, _) => OnSourceChanged?.Invoke(sourceId);
+            OnSourceChanged?.Invoke(id);
+            return ds;
+        });
     }
 
     public DataSource? GetSource(string id) => _sources.GetValueOrDefault(id);

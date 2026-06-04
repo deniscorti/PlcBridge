@@ -214,6 +214,28 @@ Le connessioni WS inter-bridge usano lo stesso protocollo dei client, con l'aggi
 
 Il cambio di modalità operativa richiede un riavvio del servizio (niente hot-reload).
 
+### Indipendenza dall'ordine di avvio
+
+I tre nodi (DataProvider, DataService, DataServer) possono essere avviati in **qualsiasi ordine**. Ogni nodo e' resiliente all'assenza temporanea degli altri:
+
+- **Connessione iniziale**: se l'upstream non e' raggiungibile, il client WS entra in un loop di reconnect con backoff esponenziale (1s → 30s max). Alla riconnessione vengono riavviati receive loop e heartbeat.
+- **Discovery ritardata**: se l'upstream e' raggiungibile ma non ha ancora scoperto i tag (es. il simulatore UDP non ha ancora inviato metadata), il `getSources` restituisce una lista vuota. Quando i tag vengono scoperti, l'upstream invia un messaggio push `sourcesChanged` a tutti i client WS connessi. Il client ri-esegue automaticamente `getSources` e registra i nuovi tag.
+- **Propagazione a catena**: la notifica `sourcesChanged` si propaga lungo tutta la catena (DataProvider → DataService → DataServer). Ogni nodo, ricevendo la notifica, aggiorna le proprie source/tag e ri-notifica i propri client WS a valle.
+- **Sottoscrizioni**: l'`UpstreamSubscriptionAggregator` (DataServer) registra i client WS per le source scoperte dinamicamente, cosi' che le sottoscrizioni dei client finali vengano inoltrate correttamente upstream.
+- **UDP inter-bridge**: il canale UDP e' intrinsecamente resiliente — il sender invia mapping periodici (ogni 10s), quindi il receiver scopre i tag appena i pacchetti mapping arrivano, indipendentemente dall'ordine di avvio.
+
+```
+Esempio: avvio in ordine inverso
+
+1. DataServer parte         → retry connessione WS verso DataService
+2. DataService parte        → retry connessione WS verso DataProvider
+3. DataProvider parte       → connessione WS stabilita lungo la catena
+4. Simulatore UDP parte     → invia metadata packet
+5. DataProvider             → auto-discovery tag → broadcast "sourcesChanged"
+6. DataService              → riceve "sourcesChanged" → ri-discovery → broadcast "sourcesChanged"
+7. DataServer               → riceve "sourcesChanged" → ri-discovery → pronto per i client
+```
+
 ### Protocollo inter-bridge: WS
 
 Le connessioni WS tra bridge usano lo **stesso protocollo WebSocket** dei client, con queste convenzioni:
@@ -225,6 +247,7 @@ Le connessioni WS tra bridge usano lo **stesso protocollo WebSocket** dei client
 - Puo' specificare `downsampleMs` per richiedere telemetria a frequenza ridotta
 - Puo' inviare `subscribe` con `since: <msgId>` per richiedere recovery dei messaggi persi
 - La sorgente risponde con `recoveryStart` → messaggi normali → `recoveryEnd`, oppure `recoveryFailed` se il buffer e' gia' stato ruotato
+- La sorgente invia `sourcesChanged` (push, senza richiesta) quando nuove source o tag vengono registrati. Il client ri-esegue `getSources` per aggiornare la propria lista
 
 Con `SelectiveSubscription: true` (default nel DataServer), le sottoscrizioni upstream vengono gestite dall'`UpstreamSubscriptionAggregator`: il DataServer sottoscrive solo i canali che i suoi client stanno attivamente visualizzando. Con `SelectiveSubscription: false` (DataService), il nodo sottoscrive tutto al momento della connessione.
 
@@ -768,13 +791,41 @@ Il **DataServer salva automaticamente** i chunk ricevuti via chunk transfer come
 
 ### Caricamento archivi (DataServer)
 
-Il DataServer può caricare file Parquet come chunk `Loaded` in memoria:
+Il DataServer puo' caricare file Parquet come chunk `Loaded` in memoria:
 - **Per singolo file**: `POST /archives/load` con nome file e tag opzionali
 - **Per intervallo temporale**: `POST /archives/load-range` con source, kind, from, to — il sistema trova automaticamente i file Parquet che coprono l'intervallo richiesto e carica solo le colonne (tag) richieste
 
 Questo permette al DataServer di ricostruire lo storico per sessioni di analisi offline: il client chiede un intervallo, il DataServer carica i Parquet corrispondenti e li serve come chunk Loaded tramite le stesse API di query usate per i dati live.
 
-### Retrocompatibilità
+### Compattazione chunk
+
+`POST /archives/compact` unisce tutti i chunk Parquet di un intervallo temporale in un unico file per source+kind. I dati vengono deduplicati (per tag+timestamp, si tiene il msgId piu' alto), ordinati cronologicamente, e scritti in un unico Parquet. I file originali vengono spostati in una sottocartella `.compacted/`.
+
+### Dati storici (HistoricalDataPath)
+
+Il DataServer puo' essere configurato con un `HistoricalDataPath` — una cartella che contiene file Parquet storici (prodotti dal DataService o copiati manualmente). Le API disponibili:
+
+- **`POST /archives/scan-historical`**: scansiona la cartella, legge solo lo schema dei file (nomi colonne = tag) senza caricare dati. Ritorna un manifest con source, kind, tag, range, numero file.
+- **`POST /archives/load-historical`**: carica i file nell'intervallo richiesto nel buffer in memoria come chunk Loaded, e registra source/tag nel SourceManager cosi' che appaiano in `getSources`.
+- **`POST /sources/{source}/load-channels`** e **WS `loadChannels`**: legge dati direttamente dai Parquet nel `HistoricalDataPath` **senza caricarli nel ring buffer**. Supporta downsampling min-max per ridurre i dati trasferiti.
+
+### Downsampling min-max (load-channels)
+
+Quando il client specifica un parametro `resolution` (es. 1000), il server applica un downsampling **min-max bucketing** che preserva i picchi:
+
+1. Divide l'intervallo `[from, to]` in `resolution` bucket temporali uguali
+2. Per ogni bucket con > 4 punti: emette first, min, max, last (in ordine temporale)
+3. Per bucket con <= 4 punti: emette tutti
+4. Output: max `4 x resolution` punti per tag
+
+Vantaggi rispetto a LTTB:
+- Garantisce di preservare min e max assoluti per ogni intervallo — nessun spike perso
+- Piu' semplice e prevedibile per dati industriali
+- Il client WebClient usa `resolution = larghezza_chart * 1.5` per adattarsi alla viewport
+
+La risposta include `totalPoints` e `returnedPoints` per informare il client sul livello di compressione, e `downsampled: true/false`. L'API e' predisposta per lazy loading futuro con campi `hasMore` e `nextPage`.
+
+### Retrocompatibilita'
 
 Il reader Parquet riconosce automaticamente il vecchio formato long (6 colonne: source, tag, kind, value_json, timestamp_us, msg_id) e lo legge correttamente. I nuovi file vengono scritti esclusivamente nel formato wide.
 

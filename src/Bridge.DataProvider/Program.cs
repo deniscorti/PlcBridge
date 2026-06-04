@@ -118,6 +118,16 @@ try
         }
     }
 
+    // ── Notify WS clients when sources/tags change (e.g. auto-discovery) ──
+    Timer? sourceChangedDebounce = null;
+    srcMgr.OnSourceChanged += sourceId =>
+    {
+        sourceChangedDebounce?.Dispose();
+        sourceChangedDebounce = new Timer(state =>
+            _ = connMgr.BroadcastAsync(new { type = "sourcesChanged" }),
+            null, 500, Timeout.Infinite);
+    };
+
     // ── Wire up value dispatch (push to WS subscribers) ──
     srcMgr.OnValue += value =>
     {

@@ -51,9 +51,18 @@ public sealed class BridgeWsClient : IAsyncDisposable
     public async Task ConnectAsync(CancellationToken ct = default)
     {
         _cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        await ConnectInternalAsync(_cts.Token);
-        _receiveTask = ReceiveLoopAsync(_cts.Token);
-        _heartbeatTask = HeartbeatLoopAsync(_cts.Token);
+        try
+        {
+            await ConnectInternalAsync(_cts.Token);
+            _receiveTask = ReceiveLoopAsync(_cts.Token);
+            _heartbeatTask = HeartbeatLoopAsync(_cts.Token);
+        }
+        catch (OperationCanceledException) { /* shutting down */ }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Initial connection to upstream {Url} failed for source {Source}, will retry", _opts.Url, SourceId);
+            _ = ReconnectAsync(_cts.Token);
+        }
     }
 
     public async Task StopAsync()
@@ -331,6 +340,8 @@ public sealed class BridgeWsClient : IAsyncDisposable
                 _ws?.Dispose();
                 await ConnectInternalAsync(ct);
                 _receiveTask = ReceiveLoopAsync(ct);
+                _heartbeatTask = HeartbeatLoopAsync(ct);
+                delay = 1000;
                 return;
             }
             catch (OperationCanceledException) { return; }
@@ -381,6 +392,17 @@ public sealed class BridgeWsClient : IAsyncDisposable
             if (type == "chunkReady")
             {
                 OnChunkReady?.Invoke(root.Clone());
+                return;
+            }
+
+            // Handle sourcesChanged notification — re-discover tags from upstream
+            if (type == "sourcesChanged")
+            {
+                if (OnTagsDiscovered is not null)
+                {
+                    _logger.LogInformation("Upstream sources changed for {Source}, re-discovering tags", SourceId);
+                    _ = DiscoverTagsAsync();
+                }
                 return;
             }
 

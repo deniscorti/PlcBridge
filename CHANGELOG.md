@@ -77,6 +77,16 @@ e il versionamento [SemVer](https://semver.org/lang/it/).
 - Il canale UDP e' completamente autosufficiente — non richiede WS o REST per la risoluzione dei nomi
 - MappingGroup: buffer per raccogliere pacchetti mapping multi-part con timeout 30s per gruppi incompleti
 
+### Added — Gestione archivi DataServer
+- `POST /archives/compact`: compatta chunk in un intervallo in un unico Parquet per kind, originali spostati in `.compacted/`
+- `POST /archives/scan-historical`: scansiona `HistoricalDataPath` per file Parquet, ritorna manifest source/tag/range senza caricare dati
+- `POST /archives/load-historical`: carica file da `HistoricalDataPath` nel buffer come chunk Loaded, registra source/tag
+- `POST /sources/{source}/load-channels` + WS `loadChannels`: carica storico canali da Parquet con downsampling min-max
+- `Downsampler.MinMaxBucket`: per ogni bucket emette first/min/max/last (max 4 punti), preserva picchi
+- `ParquetStorage`: +`CompactAsync`, +`ReadSchemaAsync`, +`ScanDirectoryAsync`, +`WriteValuesAsync`, +`ListHistoricalFiles`, +`HistoricalPath`
+- Config: `BufferOptions.HistoricalDataPath` (cartella dati storici)
+- WebClient tool: UI compact, scan/load historical, loadHistory usa loadChannels con resolution adattivo
+
 ### Added — Compact Push Protocol
 - CompactLayoutManager: gestione layout posizionali per-connessione, layoutId versioning
 - CompactBatchAccumulator: accumula valori per ~50ms poi invia batch posizionale

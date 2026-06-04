@@ -53,6 +53,10 @@ Base URL: `http://<host>:<port>/api`
 | GET    | `/archives`                                   | Elenco archivi Parquet con metadati parsed (`?source=linea1&kind=telemetry`) | DataService, DataServer |
 | POST   | `/archives/load`                              | Carica singolo file in memoria. Body: `{ "source": "...", "file": "...", "tags": ["t1","t2"] }` | DataServer |
 | POST   | `/archives/load-range`                        | Carica archivi per intervallo temporale. Body: `{ "source": "...", "kind": "telemetry", "from": "...", "to": "...", "tags": ["t1"] }` | DataServer |
+| POST   | `/archives/compact`                           | Compatta chunk in un intervallo in un unico Parquet per kind. Body: `{ "source": "...", "from": "...", "to": "...", "kind": "telemetry" }`. `source` opzionale: se omesso compatta tutte le source trovate. `kind` opzionale: se omesso compatta tutti i kind. Originali spostati in `.compacted/` | DataServer |
+| POST   | `/archives/scan-historical`                   | Scansiona `HistoricalDataPath` per file Parquet. Body: `{ "from": "...", "to": "..." }` (opzionali). Ritorna manifest source/tag/range senza caricare dati | DataServer |
+| POST   | `/archives/load-historical`                   | Carica file da `HistoricalDataPath` nel buffer come chunk Loaded. Body: `{ "from": "...", "to": "...", "tags": ["t1"] }`. Registra source/tag in SourceManager | DataServer |
+| POST   | `/sources/{source}/load-channels`             | Carica storico canali da `HistoricalDataPath` con downsampling. Body: `{ "tags": [...], "from": "...", "to": "...", "resolution": 1000 }` | DataServer |
 | GET    | `/sources/{source}/export`                    | Export dati come file scaricabile. Query: `?tags=t1,t2&from=...&to=...&kind=telemetry&format=csv` | DataService, DataServer |
 | GET    | `/sources/{source}/chunks`                    | Elenco chunk con stato (`?quality=live&quality=full`) | DataService, DataServer |
 | GET    | `/sources/{source}/chunks/{chunkId}/download` | Download chunk come file Parquet  | DataService, DataServer |
@@ -159,6 +163,10 @@ Ogni messaggio client→server porta un campo `id` (opzionale) per correlare la 
 { "op": "queryEvents",    "id": "qe2", "source": "linea1", "from": "2026-05-24T10:00:00Z", "to": "2026-05-24T11:00:00Z" }
 { "op": "queryAlarms",    "id": "qa1", "source": "linea1", "from": "2026-05-24T10:00:00Z", "to": "2026-05-24T11:00:00Z" }
 { "op": "queryAlarms",    "id": "qa2", "source": "linea1", "active": true, "acknowledged": false }
+
+// === Load Channels (storico da Parquet con downsampling) ===
+{ "op": "loadChannels", "id": "lc1", "source": "linea1", "tags": ["temperature", "pressure"], "from": "2026-05-24T10:00:00Z", "to": "2026-05-24T11:00:00Z", "resolution": 1000 }
+// resolution omesso = tutti i punti, con resolution = min-max bucketing (4 punti/bucket max)
 { "op": "archives",       "id": "a1",  "source": "linea1" }
 
 // === Allarmi: acknowledge ===
@@ -243,6 +251,19 @@ Ogni messaggio client→server porta un campo `id` (opzionale) per correlare la 
     { "tag": "startButton", "events": [{ "value": true, "ts": "..." }, { "value": false, "ts": "..." }] }
 ], "from": "...", "to": "...", "truncated": false }
 
+// === Risposta loadChannels (predisposta per lazy loading) ===
+{ "type": "response", "id": "lc1", "ok": true,
+  "source": "linea1", "from": "...", "to": "...",
+  "totalPoints": 50000, "returnedPoints": 3000, "downsampled": true, "resolution": 1000,
+  "data": [
+    { "tag": "temperature", "rawCount": 25000, "values": [{ "v": 23.1, "ts": "...", "msgId": 100 }] },
+    { "tag": "pressure",    "rawCount": 25000, "values": [{ "v": 1.01, "ts": "...", "msgId": 101 }] }
+  ]
+}
+// Se resolution omesso: totalPoints == returnedPoints, downsampled == false
+// Downsampling usa min-max bucketing: per ogni bucket emette first/min/max/last (max 4 punti)
+// I picchi sono sempre preservati — nessun spike perso nella visualizzazione
+
 { "type": "response", "id": "qa1", "ok": true, "kind": "alarm", "quality": "full", "data": [
     { "tag": "overtemp", "alarms": [{ "active": true, "acknowledged": false, "severity": "critical", "ts": "..." }, { "active": false, "ts": "..." }] }
 ], "from": "...", "to": "...", "truncated": false }
@@ -278,6 +299,11 @@ Ogni messaggio client→server porta un campo `id` (opzionale) per correlare la 
   "sources": { "linea1": { "connected": true, "rttMs": 45 } },
   "buffer": { "linea1": { "usedMb": 120, "records": 500000 } },
   "clients": { "wsConnections": 12, "activeSubscriptions": 340 } }
+
+// === Notifica cambio source/tag (push, non richiesto) ===
+// Inviato quando nuove source o tag vengono registrati (es. auto-discovery).
+// Il client dovrebbe ri-eseguire getSources per aggiornare la propria lista.
+{ "type": "sourcesChanged" }
 
 // === Stato connessione (push, non richiesto) ===
 { "type": "connection", "source": "linea1", "state": "connected" }

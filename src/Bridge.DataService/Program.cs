@@ -198,6 +198,16 @@ try
         }
     }
 
+    // ── Notify WS clients when sources/tags change (e.g. auto-discovery from upstream or UDP) ──
+    Timer? sourceChangedDebounce = null;
+    srcMgr.OnSourceChanged += sourceId =>
+    {
+        sourceChangedDebounce?.Dispose();
+        sourceChangedDebounce = new Timer(state =>
+            _ = connMgr.BroadcastAsync(new { type = "sourcesChanged" }),
+            null, 500, Timeout.Infinite);
+    };
+
     // ── Wire up value dispatch ──
     srcMgr.OnValue += value =>
     {

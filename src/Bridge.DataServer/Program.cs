@@ -71,7 +71,7 @@ try
     builder.Services.AddSingleton(bufMgr);
 
     // ── Storage (Parquet: salva chunk ricevuti come archivio + carica archivi per analisi offline) ──
-    var storage = new ParquetStorage(bridgeOpts.Buffer.ParquetOutputPath, bridgeOpts.Buffer.ParquetArchivePath);
+    var storage = new ParquetStorage(bridgeOpts.Buffer.ParquetOutputPath, bridgeOpts.Buffer.ParquetArchivePath, bridgeOpts.Buffer.HistoricalDataPath);
     builder.Services.AddSingleton(storage);
 
     // ── Chunk transfer (downloads Parquet files via HTTP, saves to archive) ──
@@ -222,6 +222,16 @@ try
     }
 
 
+    // ── Notify WS clients when sources/tags change (e.g. discovery from upstream) ──
+    Timer? sourceChangedDebounce = null;
+    srcMgr.OnSourceChanged += sourceId =>
+    {
+        sourceChangedDebounce?.Dispose();
+        sourceChangedDebounce = new Timer(state =>
+            _ = connMgr.BroadcastAsync(new { type = "sourcesChanged" }),
+            null, 500, Timeout.Infinite);
+    };
+
     // ── Wire up value dispatch ──
     srcMgr.OnValue += value =>
     {
@@ -280,6 +290,7 @@ try
     app.MapBridgeWebSocket(bridgeOpts.WebSocket.Path);
     app.MapQueryEndpoints();
     app.MapArchiveEndpoints();
+    app.MapChannelEndpoints();
 
     Log.Information("Bridge DataServer starting on port {Port}", bridgeOpts.Http.Port);
 

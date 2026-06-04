@@ -18,13 +18,20 @@ public sealed class ParquetStorage
 {
     private readonly string _diskPath;
     private readonly string _archivePath;
+    private readonly string? _historicalPath;
 
-    public ParquetStorage(string diskPath, string archivePath)
+    public string DiskPath => _diskPath;
+    public string ArchivePath => _archivePath;
+    public string? HistoricalPath => _historicalPath;
+
+    public ParquetStorage(string diskPath, string archivePath, string? historicalPath = null)
     {
         _diskPath = diskPath;
         _archivePath = archivePath;
+        _historicalPath = historicalPath;
         Directory.CreateDirectory(_diskPath);
         Directory.CreateDirectory(_archivePath);
+        if (historicalPath is not null) Directory.CreateDirectory(historicalPath);
     }
 
     /// <summary>Write a sealed chunk to Parquet — one file per DataKind present in the chunk.
@@ -405,6 +412,210 @@ public sealed class ParquetStorage
         return null;
     }
 
+    /// <summary>Compact/merge all Parquet files in a time range into a single file per kind.
+    /// Original files are moved to a .compacted/ subfolder.</summary>
+    public async Task<List<string>> CompactAsync(string source, DataKind? kind, DateTimeOffset from, DateTimeOffset to, string? outputDir = null)
+    {
+        var dir = outputDir ?? _archivePath;
+        var kinds = kind.HasValue ? [kind.Value] : new[] { DataKind.Telemetry, DataKind.Event, DataKind.Alarm };
+        var mergedFiles = new List<string>();
+
+        foreach (var k in kinds)
+        {
+            var files = ListFilesInRange(source, k, from, to);
+            if (files.Count == 0) continue;
+
+            // Read all values
+            var allValues = new List<TagValue>();
+            foreach (var f in files)
+            {
+                var values = await ReadFileAsync(f.FullPath);
+                allValues.AddRange(values);
+            }
+
+            if (allValues.Count == 0) continue;
+
+            // Dedup: for same (tag, timestamp), keep the one with highest msgId
+            var deduped = allValues
+                .GroupBy(v => (v.Tag, v.Timestamp))
+                .Select(g => g.OrderByDescending(v => v.MsgId).First())
+                .OrderBy(v => v.Timestamp)
+                .ToList();
+
+            // Write consolidated file
+            var actualFrom = deduped.Min(v => v.Timestamp);
+            var actualTo = deduped.Max(v => v.Timestamp);
+            var fileName = await WriteValuesAsync(dir, source, k, actualFrom, actualTo, deduped);
+            mergedFiles.Add(fileName);
+
+            // Move originals to .compacted/
+            var compactedDir = Path.Combine(Path.GetDirectoryName(files[0].FullPath) ?? dir, ".compacted");
+            Directory.CreateDirectory(compactedDir);
+            foreach (var f in files)
+            {
+                var dest = Path.Combine(compactedDir, f.FileName);
+                if (f.FullPath != Path.Combine(dir, fileName)) // don't move the new file
+                    File.Move(f.FullPath, dest, overwrite: true);
+            }
+        }
+
+        return mergedFiles;
+    }
+
+    /// <summary>Write a list of TagValues as a Parquet file. Standalone version of WriteKindFileAsync.</summary>
+    public static async Task<string> WriteValuesAsync(string dir, string source, DataKind kind,
+        DateTimeOffset fromTs, DateTimeOffset toTs, IReadOnlyList<TagValue> values)
+    {
+        var rows = new SortedDictionary<long, (uint maxMsgId, Dictionary<string, object?> tags)>();
+        var tagNames = new LinkedHashSet<string>();
+
+        foreach (var v in values)
+        {
+            var tsMs = v.Timestamp.ToUnixTimeMilliseconds();
+            if (!rows.TryGetValue(tsMs, out var row))
+            {
+                row = (v.MsgId, new Dictionary<string, object?>());
+                rows[tsMs] = row;
+            }
+            else if (v.MsgId > row.maxMsgId)
+            {
+                row = (v.MsgId, row.tags);
+                rows[tsMs] = row;
+            }
+            row.tags[v.Tag] = v.Value;
+            tagNames.Add(v.Tag);
+        }
+
+        var tagList = tagNames.ToList();
+        var rowCount = rows.Count;
+
+        var fields = new List<Field>
+        {
+            new DataField<long>("timestamp_ms"),
+            new DataField<int>("msg_id")
+        };
+        foreach (var tag in tagList)
+            fields.Add(new DataField<double?>(tag));
+
+        var schema = new ParquetSchema(fields);
+
+        var timestamps = new long[rowCount];
+        var msgIds = new int[rowCount];
+        var tagColumns = new double?[tagList.Count][];
+        for (int t = 0; t < tagList.Count; t++)
+            tagColumns[t] = new double?[rowCount];
+
+        int rowIdx = 0;
+        foreach (var (tsMs, (maxMsgId, tagValues)) in rows)
+        {
+            timestamps[rowIdx] = tsMs;
+            msgIds[rowIdx] = (int)maxMsgId;
+            for (int t = 0; t < tagList.Count; t++)
+            {
+                if (tagValues.TryGetValue(tagList[t], out var val) && val is not null)
+                    tagColumns[t][rowIdx] = ConvertToDouble(val);
+                else
+                    tagColumns[t][rowIdx] = null;
+            }
+            rowIdx++;
+        }
+
+        uint firstMsg = values.Min(v => v.MsgId);
+        uint lastMsg = values.Max(v => v.MsgId);
+
+        var fileName = $"{source}_{kind.ToString().ToLowerInvariant()}" +
+                       $"_{fromTs:yyyy-MM-dd_HH-mm-ss}_{toTs:yyyy-MM-dd_HH-mm-ss}" +
+                       $"_{firstMsg}_{lastMsg}.parquet";
+        var path = Path.Combine(dir, fileName);
+
+        Directory.CreateDirectory(dir);
+        using var stream = File.Create(path);
+        using var writer = await ParquetWriter.CreateAsync(schema, stream);
+        using var group = writer.CreateRowGroup();
+
+        await group.WriteColumnAsync(new DataColumn(schema.DataFields[0], timestamps));
+        await group.WriteColumnAsync(new DataColumn(schema.DataFields[1], msgIds));
+        for (int t = 0; t < tagList.Count; t++)
+            await group.WriteColumnAsync(new DataColumn(schema.DataFields[t + 2], tagColumns[t]));
+
+        return fileName;
+    }
+
+    /// <summary>Read only the tag column names from a Parquet file schema (no data loaded).</summary>
+    public static async Task<string[]> ReadSchemaAsync(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        using var reader = await ParquetReader.CreateAsync(stream);
+        var schema = reader.Schema;
+        // Fields[0]=timestamp_ms, [1]=msg_id, [2..]=tags
+        return schema.DataFields.Skip(2).Select(f => f.Name).ToArray();
+    }
+
+    /// <summary>Scan a directory for Parquet files and return a manifest of discovered sources/tags.</summary>
+    public static async Task<List<ParquetManifestEntry>> ScanDirectoryAsync(string path,
+        DateTimeOffset? from = null, DateTimeOffset? to = null)
+    {
+        var result = new List<ParquetManifestEntry>();
+        if (!Directory.Exists(path)) return result;
+
+        foreach (var file in Directory.GetFiles(path, "*.parquet"))
+        {
+            var fileName = Path.GetFileName(file);
+            var parsed = ParseFileName(Path.GetFileNameWithoutExtension(fileName));
+            if (parsed is null) continue;
+
+            var timeRange = ParseTimeRange(fileName);
+            if (timeRange is not null && from is not null && timeRange.Value.to <= from.Value) continue;
+            if (timeRange is not null && to is not null && timeRange.Value.from >= to.Value) continue;
+
+            string[] tags;
+            try { tags = await ReadSchemaAsync(file); }
+            catch { continue; }
+
+            result.Add(new ParquetManifestEntry(
+                parsed.Value.source,
+                parsed.Value.kind,
+                tags,
+                timeRange?.from,
+                timeRange?.to,
+                file,
+                fileName));
+        }
+
+        return result;
+    }
+
+    /// <summary>List files in the historical path within a time range.</summary>
+    public IReadOnlyList<ParquetFileInfo> ListHistoricalFiles(string? source = null, DataKind? kind = null,
+        DateTimeOffset? from = null, DateTimeOffset? to = null)
+    {
+        if (_historicalPath is null) return [];
+        var files = new List<ParquetFileInfo>();
+        ScanDir(_historicalPath, files);
+
+        if (source is not null)
+            files.RemoveAll(f => !f.FileName.StartsWith(source + "_", StringComparison.OrdinalIgnoreCase));
+        if (kind is not null)
+        {
+            var kindStr = "_" + kind.Value.ToString().ToLowerInvariant() + "_";
+            files.RemoveAll(f => !f.FileName.Contains(kindStr, StringComparison.OrdinalIgnoreCase));
+        }
+        if (from is not null || to is not null)
+        {
+            files.RemoveAll(f =>
+            {
+                var range = ParseTimeRange(f.FileName);
+                if (range is null) return false;
+                if (from is not null && range.Value.to <= from.Value) return true;
+                if (to is not null && range.Value.from >= to.Value) return true;
+                return false;
+            });
+        }
+
+        files.Sort((a, b) => string.Compare(a.FileName, b.FileName, StringComparison.Ordinal));
+        return files;
+    }
+
     private static void ScanDir(string dir, List<ParquetFileInfo> list)
     {
         if (!Directory.Exists(dir)) return;
@@ -417,6 +628,11 @@ public sealed class ParquetStorage
 }
 
 public sealed record ParquetFileInfo(string FileName, string FullPath, long SizeBytes);
+
+public sealed record ParquetManifestEntry(
+    string Source, DataKind Kind, string[] Tags,
+    DateTimeOffset? FromTs, DateTimeOffset? ToTs,
+    string FullPath, string FileName);
 
 /// <summary>Preserves insertion order while deduplicating — used for tag column ordering.</summary>
 internal sealed class LinkedHashSet<T> where T : notnull

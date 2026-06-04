@@ -271,8 +271,8 @@ label.chk{font-size:.76rem;color:var(--muted);display:flex;align-items:center;ga
     <button onclick="B.dv.wsSend({op:'ping'})">Ping</button>
   </div>
 
-  <!-- Commands (collapsible, top) -->
-  <div class="row"><button class="coll-btn" onclick="tog('dv-cmd')">Commands</button></div>
+  <!-- Commands (collapsible) -->
+  <div class="row"><button class="coll-btn" onclick="tog('dv-cmd')">&#9654; Commands</button></div>
   <div id="dv-cmd" style="display:none">
     <div class="cmd-grid">
       <div class="cmd-card">
@@ -288,26 +288,9 @@ label.chk{font-size:.76rem;color:var(--muted);display:flex;align-items:center;ga
         <div class="row"><span class="lbl">Chunk:</span><input type="number" id="dv-chunk-min" value="5" min="1" max="60" style="width:50px"><span class="lbl">min</span><button onclick="B.dv.setChunkDur()">setChunkDuration</button></div>
       </div>
       <div class="cmd-card">
-        <h3>Query History (WS)</h3>
-        <div class="row"><span class="lbl">Source:</span><select id="dv-q-src"></select></div>
-        <div class="row"><span class="lbl">Tags:</span><input id="dv-q-tags" placeholder="Canale1,Canale2" style="width:160px"><span class="info">(empty = all tags)</span></div>
-        <div class="row"><span class="lbl">Range:</span><select id="dv-q-range"><option value="60">1 min</option><option value="300" selected>5 min</option><option value="900">15 min</option><option value="3600">1 hour</option></select></div>
-        <div class="row"><span class="lbl">Limit:</span><input type="number" id="dv-q-limit" value="5000" style="width:65px"><span class="info">(max records total, shared across all tags)</span></div>
-        <div class="row"><button onclick="B.dv.query('queryTelemetry')">Telemetry</button><button onclick="B.dv.query('queryEvents')">Events</button><button onclick="B.dv.query('queryAlarms')">Alarms</button></div>
-        <div class="cmd-help">Queries buffered history. Response includes <code>quality</code>: "full" (from chunk transfer), "live" (downsample), "mixed", or "loaded" (Parquet import). Increase limit for more data.</div>
-      </div>
-      <div class="cmd-card">
-        <h3>Archives (Parquet)</h3>
-        <div class="row"><button onclick="B.dv.listArchives()">List Archives</button></div>
-        <div class="row"><span class="lbl">File:</span><input id="dv-arch-file" placeholder="path/to/file.parquet" style="width:200px"><button onclick="B.dv.loadArchiveFromInput()">Load</button></div>
-        <div id="dv-archives"></div>
-        <div class="cmd-help">Load a Parquet file produced by a DataService into the buffer as <code>Loaded</code> chunks. Use "List Archives" to see available files on the server.</div>
-      </div>
-      <div class="cmd-card">
-        <h3>Export CSV (REST)</h3>
-        <div class="row"><span class="lbl">Source:</span><select id="dv-exp-src"></select></div>
-        <div class="row"><select id="dv-exp-range"><option value="300">5m</option><option value="900">15m</option><option value="3600" selected>1h</option></select></div>
-        <div class="row"><button onclick="B.dv.exportCsv('telemetry')">Telemetry</button><button onclick="B.dv.exportCsv('event')">Events</button><button onclick="B.dv.exportCsv('alarm')">Alarms</button></div>
+        <h3>Read / Write</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="dv-rw-src"></select></div>
+        <div class="row"><input id="dv-tag" placeholder="Tag name" style="width:120px"><input id="dv-val" placeholder="Value" style="width:80px"><button onclick="B.dv.sendRead()">Read</button><button onclick="B.dv.sendWrite()">Write</button></div>
       </div>
       <div class="cmd-card">
         <h3>Source Command</h3>
@@ -320,39 +303,108 @@ label.chk{font-size:.76rem;color:var(--muted);display:flex;align-items:center;ga
         <div class="row"><span class="lbl">Source:</span><select id="dv-ack-src"></select></div>
         <div class="row"><input id="dv-ack-tag" placeholder="tag or ALL" style="width:120px"><button onclick="B.dv.ackAlarm()">Ack</button><button onclick="B.dv.ackAll()">Ack ALL</button></div>
       </div>
+      <div class="cmd-card">
+        <h3>Export CSV (REST)</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="dv-exp-src"></select></div>
+        <div class="row"><span class="lbl">Minutes:</span><input type="number" id="dv-exp-min" value="60" min="1" style="width:65px"></div>
+        <div class="row"><button onclick="B.dv.exportCsv('telemetry')">Telemetry</button><button onclick="B.dv.exportCsv('event')">Events</button><button onclick="B.dv.exportCsv('alarm')">Alarms</button></div>
+      </div>
     </div>
   </div>
 
-  <!-- Channels -->
+  <!-- Channels (collapsible) -->
   <div id="dv-ch-section" style="display:none">
     <div class="row">
-      <button class="coll-btn" onclick="tog('dv-ch-panel')">Channels</button>
+      <button class="coll-btn" onclick="tog('dv-ch-panel')">&#9654; Channels</button>
       <button onclick="B.dv.selAll(true)">Select All</button>
       <button onclick="B.dv.selAll(false)">Deselect All</button>
       <label class="chk"><input type="checkbox" id="dv-compact">Compact</label>
-      <label class="chk"><input type="checkbox" id="dv-chart" checked>Chart</label>
       <button class="primary" onclick="B.dv.subscribe()">Subscribe</button>
-      <button onclick="B.dv.unsubscribe()">Unsubscribe</button>
+      <button style="background:var(--red);color:#fff" onclick="B.dv.unsubscribe()">Unsubscribe</button>
       <span class="info" id="dv-sel-count"></span>
       <span class="info" id="dv-layout-info"></span>
     </div>
     <div id="dv-ch-panel" style="display:none"><div id="dv-ch-groups"></div></div>
   </div>
 
-  <!-- Chart -->
+  <!-- Chart (collapsible) -->
   <div id="dv-chart-section" style="display:none">
-    <div class="row"><h2>Chart</h2>
-      <select id="dv-chart-range" onchange="B.dv.chartRangeChange()"><option value="60">1m</option><option value="300" selected>5m</option><option value="900">15m</option><option value="3600">1h</option></select>
+    <div class="row">
+      <button class="coll-btn" onclick="tog('dv-chart-body')">&#9654; Chart</button>
+      <span class="lbl">Range (min):</span><input type="number" id="dv-chart-range" value="5" min="1" style="width:55px" onchange="B.dv.chartRangeChange()">
       <button onclick="B.dv.loadHistory()">Load History</button><button onclick="B.dv.resetZoom()">Reset</button>
       <label class="chk"><input type="checkbox" id="dv-chart-follow" checked>Follow</label>
       <span class="info" id="dv-chart-info"></span>
     </div>
-    <div class="chart-box" id="chart-container-dv"></div>
+    <div id="dv-chart-body">
+      <div class="chart-box" id="chart-container-dv"></div>
+    </div>
   </div>
 
+  <!-- Query (collapsible) -->
+  <div class="row"><button class="coll-btn" onclick="tog('dv-query-panel')">&#9654; Query</button></div>
+  <div id="dv-query-panel" style="display:none">
+    <div class="cmd-grid">
+      <div class="cmd-card">
+        <h3>Query History (WS)</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="dv-q-src"></select></div>
+        <div class="row"><span class="lbl">Tags:</span><input id="dv-q-tags" placeholder="Canale1,Canale2" style="width:160px"><span class="info">(empty = all tags)</span></div>
+        <div class="row"><span class="lbl">From (UTC):</span><input type="datetime-local" id="dv-q-from" style="width:170px"><span class="info">(empty = N minutes ago)</span></div>
+        <div class="row"><span class="lbl">To (UTC):</span><input type="datetime-local" id="dv-q-to" style="width:170px"><span class="info">(empty = now)</span></div>
+        <div class="row"><span class="lbl">Last N min:</span><input type="number" id="dv-q-minutes" value="5" min="1" style="width:65px"><span class="info">(used when From is empty)</span></div>
+        <div class="row"><span class="lbl">Limit:</span><input type="number" id="dv-q-limit" value="5000" style="width:65px"><span class="info">(max records total)</span></div>
+        <div class="row">
+          <button onclick="B.dv.queryDv('queryTelemetry')">Telemetry</button>
+          <button onclick="B.dv.queryDv('queryEvents')">Events</button>
+          <button onclick="B.dv.queryDv('queryAlarms')">Alarms</button>
+          <label class="chk"><input type="checkbox" id="dv-q-draw">Draw in chart</label>
+        </div>
+        <div class="cmd-help">Queries all data in the server buffer (live + loaded archives + loaded historical). Specify From/To for an exact range, or leave empty to use "last N minutes". <code>quality</code>: full / live / mixed / loaded.</div>
+      </div>
+      <div class="cmd-card">
+        <h3>Archives (Parquet)</h3>
+        <div class="row"><button onclick="B.dv.listArchives()">List Archives</button></div>
+        <div class="row"><span class="lbl">Source:</span><select id="dv-arch-src"></select><span class="lbl">File:</span><input id="dv-arch-file" placeholder="filename.parquet" style="width:160px"></div>
+        <div class="row"><span class="lbl">Tags:</span><input id="dv-arch-tags" placeholder="t1,t2 (empty=all)" style="width:160px"></div>
+        <div class="row"><button class="primary" onclick="B.dv.loadArchiveFromInput()">Load File</button></div>
+        <div id="dv-archives"></div>
+        <div class="cmd-sep"></div>
+        <h3>Load Range from Archives</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="dv-archrange-src"></select><span class="lbl">Kind:</span><select id="dv-archrange-kind"><option value="telemetry">telemetry</option><option value="event">event</option><option value="alarm">alarm</option></select></div>
+        <div class="row"><span class="lbl">From (UTC):</span><input type="datetime-local" id="dv-archrange-from" style="width:170px"></div>
+        <div class="row"><span class="lbl">To (UTC):</span><input type="datetime-local" id="dv-archrange-to" style="width:170px"></div>
+        <div class="row"><span class="lbl">Tags:</span><input id="dv-archrange-tags" placeholder="t1,t2 (empty=all)" style="width:160px"></div>
+        <div class="row"><button class="primary" onclick="B.dv.loadArchiveRange()">Load Range</button></div>
+        <div class="cmd-help">Load archives into buffer: single file (<code>/archives/load</code>) or by time range (<code>/archives/load-range</code>). After loading, query to access the data.</div>
+      </div>
+      <div class="cmd-card">
+        <h3>Historical Data</h3>
+        <div class="row"><button onclick="B.dv.scanHistorical()">Scan Historical</button></div>
+        <div class="row"><span class="lbl">From (UTC):</span><input type="datetime-local" id="dv-hist-from" style="width:170px"></div>
+        <div class="row"><span class="lbl">To (UTC):</span><input type="datetime-local" id="dv-hist-to" style="width:170px"></div>
+        <div class="row"><span class="lbl">Tags:</span><input id="dv-hist-tags" placeholder="t1,t2 (empty=all)" style="width:160px"></div>
+        <div class="row"><button class="primary" onclick="B.dv.loadHistorical()">Load into Buffer</button></div>
+        <div id="dv-historical"></div>
+        <div class="cmd-help">Scan <code>HistoricalDataPath</code> for Parquet files. "Load" imports them into the buffer as <code>Loaded</code> chunks. After loading, use Query to access data.</div>
+      </div>
+      <div class="cmd-card">
+        <h3>Compact Archives</h3>
+        <div class="row"><span class="lbl">Source:</span><select id="dv-compact-src"></select></div>
+        <div class="row"><span class="lbl">From (UTC):</span><input type="datetime-local" id="dv-compact-from" style="width:170px"></div>
+        <div class="row"><span class="lbl">To (UTC):</span><input type="datetime-local" id="dv-compact-to" style="width:170px"></div>
+        <div class="row"><button class="primary" onclick="B.dv.compactArchives()">Compact</button></div>
+        <div class="cmd-help">Merge chunk files in the time range into a single Parquet per kind. Originals moved to <code>.compacted/</code>.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Grid (collapsible) -->
+  <div class="row" id="dv-live-section" style="display:none"><button class="coll-btn" onclick="tog('dv-live-grid')">&#9654; Live Values</button></div>
   <div class="grid" id="dv-live-grid"></div>
 
-  <div class="log-split">
+  <!-- Logs (collapsible) -->
+  <div class="row"><button class="coll-btn" onclick="tog('dv-log-split')">&#9654; Logs</button></div>
+  <div class="log-split" id="dv-log-split" style="display:none">
     <div><div class="log-hdr"><h2>Log</h2><div class="row"><label class="chk"><input type="checkbox" onchange="B.dv.raw=this.checked">Raw</label><button onclick="clr('dv-log')">Clear</button></div></div><div class="log-box" id="dv-log"></div></div>
     <div><div class="log-hdr"><h2>Responses</h2><button onclick="clr('dv-resp')">Clear</button></div><div class="log-box" id="dv-resp"></div></div>
   </div>
@@ -371,6 +423,12 @@ function tog(id){const el=document.getElementById(id);el.style.display=el.style.
 function clr(id){document.getElementById(id).innerHTML='';}
 function ts(){return new Date().toISOString().substring(11,23);}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+// ── UTC helpers ── all dates in the system are UTC
+function utcFromInput(v){if(!v)return null;return v.length<=16?v+':00Z':v+'Z';} // datetime-local → ISO UTC
+function utcNow(){return new Date().toISOString();}
+function utcAgo(min){return new Date(Date.now()-min*60*1000).toISOString();}
+function fmtUtc(iso){if(!iso)return'-';return iso.replace('T',' ').replace('Z','').substring(0,19)+' UTC';}
+function getUtcInput(id){return utcFromInput(document.getElementById(id)?.value);}
 const COLORS=['#4ecca3','#5dade2','#f39c12','#e74c3c','#9b59b6','#1abc9c','#e67e22','#3498db','#e84393','#00cec9','#fdcb6e','#6c5ce7','#ff7675','#74b9ff','#a29bfe','#55efc4','#fab1a0','#81ecec','#dfe6e9','#ffeaa7'];
 const CHART_MAX=4000;
 
@@ -409,27 +467,34 @@ class BridgeTab {
     if(msg.type==='layoutUpdate'){this.layouts[msg.layoutId]={source:msg.source,tags:msg.tags};if(!this.raw)this.log(`<- layout#${msg.layoutId} [${msg.source}]`,'push');this.updateLayoutInfo();return;}
     if(msg.type==='telemetry'||msg.type==='event'||msg.type==='alarm'){this.updateTag(msg.source,msg.tag,msg.value??msg.active,msg.type);if(msg.type==='telemetry'&&typeof msg.value==='number')this.pushChart(msg.source,msg.tag,msg.value,msg.ts);if(!this.raw)this.log(`<- ${msg.type} ${msg.source}/${msg.tag}=${JSON.stringify(msg.value??msg.active)}`,'push');return;}
     if(msg.type==='pong'){if(!this.raw)this.log('<- pong','push');return;}
+    if(msg.type==='sourcesChanged'){this.log('<- sourcesChanged — refreshing sources','push');this.wsOp('getSources');return;}
     if(msg.type==='response'){
       if(msg.ok&&msg.sources&&Array.isArray(msg.sources)){this.onSources(msg.sources);if(!this.raw)this.log(`<- getSources: ${msg.sources.length}`,'push');if(msg.id)this.respLog(msg.id,'ok',`${msg.sources.length} source(s)`);return;}
       if(msg.ok&&msg.compact&&msg.layout){const ly=msg.layout;this.layouts[ly.layoutId]={source:ly.source,tags:ly.tags};if(!this.raw)this.log(`<- compact OK #${ly.layoutId}`,'push');if(msg.id)this.respLog(msg.id,'ok',`layout#${ly.layoutId}`);this.updateLayoutInfo();return;}
       if(msg.ok&&(msg.value!==undefined||msg.ts!==undefined)){if(!this.raw)this.log(`<- read val=${JSON.stringify(msg.value)}`,'push');if(msg.id)this.respLog(msg.id,'ok',`val=${JSON.stringify(msg.value)}`);return;}
-      // Query response — show summary
-      if(msg.ok&&msg.data&&msg.kind){
-        const totalVals=msg.data.reduce((s,g)=>s+(g.values?g.values.length:0),0);
-        const tagNames=msg.data.map(g=>`${g.tag}(${g.values?g.values.length:0})`).join(', ');
+      // Query response — show summary + optional draw in chart
+      if(msg.ok&&msg.kind!==undefined){
+        const data=msg.data||[];
+        const totalVals=data.reduce((s,g)=>s+(g.values?g.values.length:0),0);
+        const tagNames=data.map(g=>`${g.tag}(${g.values?g.values.length:0})`).join(', ');
         if(!this.raw){
-          this.log(`<- query ${msg.kind} | quality=${msg.quality} | ${msg.data.length} tag(s), ${totalVals} records | truncated=${msg.truncated}`,'push');
-          this.log(`   tags: ${tagNames}`,'push');
-          // Show first few values per tag
-          for(const g of msg.data.slice(0,5)){
+          this.log(`<- query ${msg.kind} | quality=${msg.quality} | ${data.length} tag(s), ${totalVals} records | truncated=${msg.truncated} | from=${msg.from} to=${msg.to}`,'push');
+          if(totalVals===0)this.log('   ⚠ No data returned — check source name, time range, and that buffer contains data for this period','error');
+          else this.log(`   tags: ${tagNames}`,'push');
+          for(const g of data.slice(0,5)){
             if(!g.values||!g.values.length)continue;
             const preview=g.values.slice(0,3).map(v=>`${typeof v.v==='number'?v.v.toFixed(2):v.v}`).join(', ');
             const suffix=g.values.length>3?` ...+${g.values.length-3} more`:'';
             this.log(`   ${g.tag}: [${preview}${suffix}]`,'push');
           }
-          if(msg.data.length>5)this.log(`   ...+${msg.data.length-5} more tags`,'push');
+          if(data.length>5)this.log(`   ...+${data.length-5} more tags`,'push');
         }
-        if(msg.id)this.respLog(msg.id,'ok',`${msg.kind} q=${msg.quality} ${msg.data.length} tags ${totalVals} records${msg.truncated?' TRUNCATED':''}`);
+        if(msg.id)this.respLog(msg.id,'ok',`${msg.kind} q=${msg.quality} ${data.length} tags ${totalVals} records${msg.truncated?' TRUNCATED':''}`);
+        // Draw in chart
+        if(msg.id&&this._pendingChartQuery===msg.id&&msg.kind==='telemetry'&&data.length){
+          delete this._pendingChartQuery;
+          this.drawQueryInChart(data);
+        }
         return;
       }
       const d=JSON.stringify(msg).substring(0,300);if(msg.id)this.respLog(msg.id,msg.ok?'ok':'error',d);if(!this.raw)this.log(`<- resp [${msg.id}] ${d}`,msg.ok?'':'error');return;
@@ -478,7 +543,8 @@ class BridgeTab {
     for(const source of keys){const msg={op:'subscribe',id:`s${++this.msgId}`,source,tags:bySource[source]};if(compact)msg.compact=true;this.wsSend(msg);}
     this.log(`Sent ${keys.length} subscribe${compact?' (compact)':''}`,'push');
     this.renderLiveGrid(bySource);
-    if(this.hasChart&&document.getElementById(`${this.p}-chart`)?.checked){const ct=[];for(const s of keys)for(const t of bySource[s])ct.push({source:s,tag:t});if(ct.length)this.setupChart(ct);}
+    const liveSection=document.getElementById(`${this.p}-live-section`);if(liveSection)liveSection.style.display='block';
+    if(this.hasChart){const ct=[];for(const s of keys)for(const t of bySource[s])ct.push({source:s,tag:t});if(ct.length)this.setupChart(ct);}
   }
   unsubscribe(){const bySource=this.getSelected();for(const s in bySource)this.wsSend({op:'unsubscribe',id:`u${++this.msgId}`,source:s});}
   renderLiveGrid(bySource){const g=this.el('live-grid');g.innerHTML='';for(const srcId in bySource){const tags=bySource[srcId];const c=document.createElement('div');c.className='card';c.innerHTML=`<h2>${srcId} <small style="color:var(--muted)">(${tags.length})</small></h2>`+tags.map(t=>`<div class="tag-row"><span class="tag-name">${t}</span><span class="tag-value telemetry" id="tv-${this.p}-${srcId}-${t}">—</span></div>`).join('');g.appendChild(c);}}
@@ -508,13 +574,127 @@ class BridgeTab {
   sourceCmd(){const src=this.getSrcSel('sc-src'),cmd=document.getElementById(`${this.p}-sc-cmd`)?.value.trim();if(!src||!cmd){this.log('Source+cmd required','error');return;}let params;const ps=document.getElementById(`${this.p}-sc-params`)?.value.trim();if(ps)try{params=JSON.parse(ps);}catch{this.log('Bad JSON params','error');return;}this.wsSend({op:'sourceCommand',id:`sc${++this.msgId}`,source:src,command:cmd,params});}
   ackAlarm(){const src=this.getSrcSel('ack-src'),tag=document.getElementById(`${this.p}-ack-tag`)?.value.trim();if(!src||!tag)return;if(tag.toUpperCase()==='ALL')this.wsSend({op:'ackAlarm',id:`aa${++this.msgId}`,source:src,tags:['ALL']});else this.wsSend({op:'ackAlarm',id:`aa${++this.msgId}`,source:src,tag});}
   ackAll(){const src=this.getSrcSel('ack-src');if(!src)return;this.wsSend({op:'ackAlarm',id:`aa${++this.msgId}`,source:src,tags:['ALL']});}
-  query(op){const src=this.getSrcSel('q-src');if(!src)return;const ts=document.getElementById(`${this.p}-q-tags`)?.value.trim();const tags=ts?(ts.toUpperCase()==='ALL'?['ALL']:ts.split(',').map(s=>s.trim())):undefined;const r=parseInt(document.getElementById(`${this.p}-q-range`).value);const lim=parseInt(document.getElementById(`${this.p}-q-limit`).value)||100;const from=new Date(Date.now()-r*1000).toISOString();const to=new Date().toISOString();this.wsSend({op,id:`q${++this.msgId}`,source:src,tags,from,to,limit:lim});}
-  exportCsv(kind){this.getUrl();const src=this.getSrcSel('exp-src');if(!src)return;const r=parseInt(document.getElementById(`${this.p}-exp-range`).value);const from=new Date(Date.now()-r*1000).toISOString();const to=new Date().toISOString();const target=`${this.url}/api/sources/${src}/export?kind=${kind}&from=${from}&to=${to}`;window.open(`/proxy?url=${encodeURIComponent(target)}`,'_blank');}
+  query(op){const src=this.getSrcSel('q-src');if(!src)return;const ts=document.getElementById(`${this.p}-q-tags`)?.value.trim();const tags=ts?(ts.toUpperCase()==='ALL'?['ALL']:ts.split(',').map(s=>s.trim())):undefined;const r=parseInt(document.getElementById(`${this.p}-q-range`).value);const lim=parseInt(document.getElementById(`${this.p}-q-limit`).value)||100;const from=utcAgo(r/60);const to=utcNow();this.wsSend({op,id:`q${++this.msgId}`,source:src,tags,from,to,limit:lim});}
+  exportCsv(kind){this.getUrl();const src=this.getSrcSel('exp-src');if(!src)return;const minEl=document.getElementById(`${this.p}-exp-min`);const rangeEl=document.getElementById(`${this.p}-exp-range`);const mins=minEl?(parseInt(minEl.value)||60):parseInt(rangeEl?.value||'3600')/60;const from=utcAgo(mins);const to=utcNow();const target=`${this.url}/api/sources/${src}/export?kind=${kind}&from=${from}&to=${to}`;window.open(`/proxy?url=${encodeURIComponent(target)}`,'_blank');}
 
   // ── Archives (DataServer) ──
-  async listArchives(){this.getUrl();try{const r=await fetch(`/proxy?url=${encodeURIComponent(this.url+'/api/archives')}`);const d=await r.json();const el=document.getElementById('dv-archives');if(!Array.isArray(d)||!d.length){el.innerHTML='<span class="info">No archives</span>';this.log('Archives: none','push');return;}el.innerHTML=`<table class="arch-table"><thead><tr><th>File</th><th>Size</th><th></th></tr></thead><tbody>`+d.map(a=>{const name=a.fileName||a.name||a;const size=a.sizeBytes?Math.round(a.sizeBytes/1024)+'KB':'-';return`<tr><td>${esc(name)}</td><td>${size}</td><td><button onclick="B.dv.loadArchive('${esc(name)}')">Load</button></td></tr>`;}).join('')+`</tbody></table>`;this.log(`Archives: ${d.length} file(s)`,'push');}catch(e){this.log(`Archives: ${e.message}`,'error');}}
-  async loadArchive(fileName){this.getUrl();try{const r=await fetch(`/proxy?url=${encodeURIComponent(this.url+'/api/archives/load')}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileName})});const d=await r.json();this.log(`Load archive: ${JSON.stringify(d)}`,r.ok?'push':'error');this.respLog(`ar${++this.msgId}`,r.ok?'ok':'error',`load ${fileName}`);}catch(e){this.log(`Load: ${e.message}`,'error');}}
-  loadArchiveFromInput(){const f=document.getElementById('dv-arch-file')?.value.trim();if(!f){this.log('Enter file path','error');return;}this.loadArchive(f);}
+  async listArchives(){this.getUrl();try{const r=await fetch(`/proxy?url=${encodeURIComponent(this.url+'/api/archives')}`);const d=await r.json();const el=document.getElementById('dv-archives');if(!Array.isArray(d)||!d.length){el.innerHTML='<span class="info">No archives</span>';this.log('Archives: none','push');return;}el.innerHTML=`<table class="arch-table"><thead><tr><th>File</th><th>Source</th><th>Kind</th><th>Size</th><th>Range</th><th></th></tr></thead><tbody>`+d.map(a=>{const name=a.file||a.fileName||a.name||'?';const size=a.size?Math.round(a.size/1024)+'KB':'-';const src=a.source||'-';const kind=a.kind||'-';const range=fmtUtc(a.fromTs)+' → '+fmtUtc(a.toTs);return`<tr><td style="font-size:.7rem">${esc(name)}</td><td>${esc(src)}</td><td>${esc(kind)}</td><td>${size}</td><td style="font-size:.7rem">${range}</td><td><button onclick="B.dv.loadArchive('${esc(name)}')">Load</button></td></tr>`;}).join('')+`</tbody></table>`;this.log(`Archives: ${d.length} file(s)`,'push');}catch(e){this.log(`Archives: ${e.message}`,'error');}}
+  async loadArchive(fileName,bodyOverride){this.getUrl();try{const r=await fetch(`/proxy?url=${encodeURIComponent(this.url+'/api/archives/load')}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(bodyOverride||{file:fileName})});const d=await r.json();this.log(`Load archive: ${JSON.stringify(d)}`,r.ok?'push':'error');this.respLog(`ar${++this.msgId}`,r.ok?'ok':'error',`load ${fileName}`);if(d.loaded>0)this.restSources();}catch(e){this.log(`Load: ${e.message}`,'error');}}
+  loadArchiveFromInput(){
+    const f=document.getElementById(`${this.p}-arch-file`)?.value.trim();if(!f){this.log('Enter file name','error');return;}
+    const srcEl=document.getElementById(`${this.p}-arch-src`);const tagsEl=document.getElementById(`${this.p}-arch-tags`);
+    const body={file:f};
+    if(srcEl?.value)body.source=srcEl.value;
+    if(tagsEl?.value.trim())body.tags=tagsEl.value.trim().split(',').map(s=>s.trim());
+    this.loadArchive(f,body);
+  }
+
+  // ── Compact Archives ──
+  async compactArchives(){
+    this.getUrl();const srcEl=document.getElementById('dv-compact-src');const src=srcEl?.value||null;
+    const from=document.getElementById('dv-compact-from')?.value;const to=document.getElementById('dv-compact-to')?.value;
+    if(!from||!to){this.log('Set From and To dates','error');return;}
+    this.log(`Compact starting${src?' for '+src:' (all sources)'}...`,'push');
+    const body={from:utcFromInput(from),to:utcFromInput(to)};if(src)body.source=src;
+    try{const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),120000);
+      const r=await fetch(`/proxy?url=${encodeURIComponent(this.url+'/api/archives/compact')}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:ctrl.signal});
+      clearTimeout(timer);const d=await r.json();this.log(`Compact: ${JSON.stringify(d)}`,r.ok?'push':'error');
+    }catch(e){if(e.name==='AbortError')this.log('Compact: still running (timeout 120s), check server logs','error');else this.log(`Compact: ${e.message}`,'error');}
+  }
+
+  // ── Historical Data ──
+  async scanHistorical(){
+    this.getUrl();
+    const from=document.getElementById('dv-hist-from')?.value;const to=document.getElementById('dv-hist-to')?.value;
+    const body={};if(from)body.from=utcFromInput(from);if(to)body.to=utcFromInput(to);
+    try{const r=await fetch(`/proxy?url=${encodeURIComponent(this.url+'/api/archives/scan-historical')}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const d=await r.json();const el=document.getElementById('dv-historical');
+      if(!d.sources||!d.sources.length){el.innerHTML='<span class="info">No files found</span>';this.log('Historical: no files','push');return;}
+      el.innerHTML=`<span class="info">Path: ${esc(d.path||'?')}</span><table class="arch-table"><thead><tr><th>Source</th><th>Kind</th><th>Tags</th><th>Files</th><th>Range</th></tr></thead><tbody>`+
+        d.sources.map(s=>`<tr><td>${esc(s.source)}</td><td>${esc(s.kind)}</td><td>${s.tags.length}</td><td>${s.fileCount}</td><td>${s.fromTs?fmtUtc(s.fromTs):'-'} → ${s.toTs?fmtUtc(s.toTs):'-'}</td></tr>`).join('')+`</tbody></table>`;
+      this.log(`Historical: ${d.sources.length} source(s)`,'push');
+    }catch(e){this.log(`Scan: ${e.message}`,'error');}
+  }
+  async loadHistorical(){
+    this.getUrl();
+    const from=document.getElementById('dv-hist-from')?.value;const to=document.getElementById('dv-hist-to')?.value;
+    if(!from||!to){this.log('Set From and To dates','error');return;}
+    const histTagsStr=document.getElementById('dv-hist-tags')?.value.trim();
+    const histBody={from:utcFromInput(from),to:utcFromInput(to)};
+    if(histTagsStr)histBody.tags=histTagsStr.split(',').map(s=>s.trim());
+    try{const r=await fetch(`/proxy?url=${encodeURIComponent(this.url+'/api/archives/load-historical')}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(histBody)});
+      const d=await r.json();this.log(`Load historical: ${JSON.stringify(d)}`,r.ok?'push':'error');
+      if(d.sources?.length)this.restSources(); // refresh source list
+    }catch(e){this.log(`Load historical: ${e.message}`,'error');}
+  }
+
+  // ── Load Channels (via REST load-channels with downsampling) ──
+  async loadChannels(source, tags, from, to, resolution){
+    this.getUrl();
+    try{const r=await fetch(`/proxy?url=${encodeURIComponent(this.url+'/api/sources/'+source+'/load-channels')}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tags,from,to,resolution})});
+      return await r.json();
+    }catch(e){this.log(`loadChannels ${source}: ${e.message}`,'error');return null;}
+  }
+
+  // ── DataServer query with from/to + draw in chart ──
+  queryDv(op){
+    const src=this.getSrcSel('q-src');if(!src)return;
+    const ts=document.getElementById(`${this.p}-q-tags`)?.value.trim();
+    const tags=ts?(ts.toUpperCase()==='ALL'?['ALL']:ts.split(',').map(s=>s.trim())):undefined;
+    const lim=parseInt(document.getElementById(`${this.p}-q-limit`).value)||5000;
+    let from=getUtcInput(`${this.p}-q-from`);
+    let to=getUtcInput(`${this.p}-q-to`);
+    if(!from){const mins=parseInt(document.getElementById(`${this.p}-q-minutes`)?.value)||5;from=utcAgo(mins);}
+    if(!to)to=utcNow();
+    const drawInChart=document.getElementById(`${this.p}-q-draw`)?.checked;
+    const id=`q${++this.msgId}`;
+    if(drawInChart)this._pendingChartQuery=id;
+    this.wsSend({op,id,source:src,tags,from,to,limit:lim});
+  }
+
+  // ── Load archive range (REST) ──
+  async loadArchiveRange(){
+    this.getUrl();
+    const src=document.getElementById('dv-archrange-src')?.value;
+    const kind=document.getElementById('dv-archrange-kind')?.value;
+    const from=document.getElementById('dv-archrange-from')?.value;
+    const to=document.getElementById('dv-archrange-to')?.value;
+    if(!from||!to){this.log('Set From and To dates','error');return;}
+    const tagsStr=document.getElementById('dv-archrange-tags')?.value.trim();
+    const body={source:src||undefined,kind:kind||undefined,from:utcFromInput(from),to:utcFromInput(to)};
+    if(tagsStr)body.tags=tagsStr.split(',').map(s=>s.trim());
+    this.log(`Load range: source=${src} kind=${kind} from=${body.from} to=${body.to}`,'push');
+    try{const r=await fetch(`/proxy?url=${encodeURIComponent(this.url+'/api/archives/load-range')}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const d=await r.json();this.log(`Load range: ${JSON.stringify(d)}`,r.ok?'push':'error');
+      this.respLog(`lr${++this.msgId}`,r.ok?'ok':'error','load-range');
+      if(r.ok)this.restSources();
+    }catch(e){this.log(`Load range: ${e.message}`,'error');}
+  }
+
+  // ── Draw query results in chart ──
+  drawQueryInChart(data){
+    const telTags=data.filter(g=>g.values&&g.values.length&&g.values.some(v=>typeof v.v==='number'));
+    if(!telTags.length){this.log('No numeric data to chart','error');return;}
+    const chartTags=telTags.map(g=>({source:'query',tag:g.tag}));
+    this.setupChart(chartTags);
+    let total=0;
+    for(const g of telTags){
+      const si=this.chartSeries.find(s=>s.tag===g.tag);if(!si)continue;
+      for(const pt of g.values){
+        if(typeof pt.v!=='number')continue;
+        const t=new Date(pt.ts).getTime()/1000;
+        const times=this.chartData[0];
+        if(!times.length||t>times[times.length-1]){times.push(t);for(let i=1;i<this.chartData.length;i++)this.chartData[i].push(null);this.chartData[si.idx][times.length-1]=pt.v;}
+        else{let lo=0,hi=times.length-1;while(lo<=hi){const mid=(lo+hi)>>1;if(times[mid]<t)lo=mid+1;else hi=mid-1;}if(lo<times.length&&Math.abs(times[lo]-t)<.001){this.chartData[si.idx][lo]=pt.v;}else{times.splice(lo,0,t);for(let i=1;i<this.chartData.length;i++)this.chartData[i].splice(lo,0,null);this.chartData[si.idx][lo]=pt.v;}}
+        total++;
+      }
+    }
+    this.log(`Drew ${total} points from query in chart (${telTags.length} series)`,'push');
+    this.chartFollowing=false;document.getElementById(`${this.p}-chart-follow`).checked=false;
+    this.chart.setData(this.chartData,false);
+    if(this.chartData[0].length)this.chart.setScale('x',{min:this.chartData[0][0],max:this.chartData[0][this.chartData[0].length-1]});
+    this.updChartInfo();
+  }
 
   // ── Chart ──
   setupChart(tags){
@@ -529,23 +709,40 @@ class BridgeTab {
     this.updChartInfo();
   }
   pushChart(source,tag,value,tsStr){if(!this.chart||!this.chartSeries.length)return;const si=this.chartSeries.find(s=>s.source===source&&s.tag===tag);if(!si)return;const t=tsStr?new Date(tsStr).getTime()/1000:Date.now()/1000;const times=this.chartData[0];if(!times.length||t>times[times.length-1]){times.push(t);for(let i=1;i<this.chartData.length;i++)this.chartData[i].push(null);}this.chartData[si.idx][times.length-1]=value;while(times.length>CHART_MAX){times.shift();for(let i=1;i<this.chartData.length;i++)this.chartData[i].shift();}this.schedRedraw();}
-  schedRedraw(){if(this.chartRedrawTimer)return;this.chartRedrawTimer=requestAnimationFrame(()=>{this.chartRedrawTimer=null;if(!this.chart||!this.chartData[0].length)return;this.chart.setData(this.chartData,false);if(this.chartFollowing||document.getElementById(`${this.p}-chart-follow`).checked){this.chartFollowing=true;const r=parseInt(document.getElementById(`${this.p}-chart-range`).value);const now=this.chartData[0][this.chartData[0].length-1];this.chart.setScale('x',{min:now-r,max:now});}this.updChartInfo();});}
+  getChartRangeSec(){const el=document.getElementById(`${this.p}-chart-range`);if(!el)return 300;if(el.tagName==='INPUT')return(parseInt(el.value)||5)*60;return parseInt(el.value)||300;}
+  schedRedraw(){if(this.chartRedrawTimer)return;this.chartRedrawTimer=requestAnimationFrame(()=>{this.chartRedrawTimer=null;if(!this.chart||!this.chartData[0].length)return;this.chart.setData(this.chartData,false);if(this.chartFollowing||document.getElementById(`${this.p}-chart-follow`).checked){this.chartFollowing=true;const r=this.getChartRangeSec();const now=this.chartData[0][this.chartData[0].length-1];this.chart.setScale('x',{min:now-r,max:now});}this.updChartInfo();});}
   resetZoom(){this.chartFollowing=true;document.getElementById(`${this.p}-chart-follow`).checked=true;this.schedRedraw();}
   chartRangeChange(){this.chartFollowing=true;document.getElementById(`${this.p}-chart-follow`).checked=true;this.schedRedraw();}
   updChartInfo(){const el=document.getElementById(`${this.p}-chart-info`);if(el)el.textContent=`${this.chartSeries.length} series, ${this.chartData[0].length} pts`;}
   async loadHistory(){
-    if(!this.chartSeries.length){this.log('No chart — subscribe with Chart enabled first','error');return;}
-    this.getUrl();const rangeSec=parseInt(document.getElementById(`${this.p}-chart-range`).value);const from=new Date(Date.now()-rangeSec*1000).toISOString(),to=new Date().toISOString();
+    if(!this.chartSeries.length){this.log('No chart — subscribe first','error');return;}
+    this.getUrl();const rangeSec=this.getChartRangeSec();const from=utcAgo(rangeSec/60),to=utcNow();
     const bySource={};for(const s of this.chartSeries){if(!bySource[s.source])bySource[s.source]=[];bySource[s.source].push(s);}
     let total=0;
-    for(const source in bySource){const tags=bySource[source].map(s=>s.tag).join(',');
-      try{const target=`${this.url}/api/sources/${source}/telemetry?tags=${tags}&from=${from}&to=${to}&limit=5000`;const r=await fetch(`/proxy?url=${encodeURIComponent(target)}`);const resp=await r.json();if(!resp.data)continue;
+    // Use loadChannels API (reads from Parquet, supports downsampling) for DataServer;
+    // fall back to REST telemetry (reads from ring buffer) for DataService
+    const chartContainer=document.getElementById(`chart-container-${this.p}`);
+    const resolution=chartContainer?Math.round(chartContainer.clientWidth*1.5):2000;
+    const useLoadChannels=this.p==='dv'; // DataServer tab uses loadChannels
+
+    for(const source in bySource){const tagNames=bySource[source].map(s=>s.tag);
+      try{
+        let resp;
+        if(useLoadChannels){
+          resp=await this.loadChannels(source, tagNames, from, to, resolution);
+        } else {
+          const target=`${this.url}/api/sources/${source}/telemetry?tags=${tagNames.join(',')}&from=${from}&to=${to}&limit=5000`;
+          this.log(`History: fetching ${source} (${tagNames.length} tags, range ${rangeSec}s)`,'push');
+          const r=await fetch(`/proxy?url=${encodeURIComponent(target)}`);resp=await r.json();
+        }
+        if(!resp||!resp.data||!resp.data.length){this.log(`History: ${source} — no data returned${resp?.error?' ('+resp.error+')':''}`,'error');continue;}
         for(const group of resp.data){const si=this.chartSeries.find(s=>s.source===source&&s.tag===group.tag);if(!si)continue;
           for(const pt of group.values){const t=new Date(pt.ts).getTime()/1000;const times=this.chartData[0];
             if(!times.length||t>times[times.length-1]){times.push(t);for(let i=1;i<this.chartData.length;i++)this.chartData[i].push(null);this.chartData[si.idx][times.length-1]=pt.v;}
             else{let lo=0,hi=times.length-1;while(lo<=hi){const mid=(lo+hi)>>1;if(times[mid]<t)lo=mid+1;else hi=mid-1;}if(lo<times.length&&Math.abs(times[lo]-t)<.001){this.chartData[si.idx][lo]=pt.v;}else{times.splice(lo,0,t);for(let i=1;i<this.chartData.length;i++)this.chartData[i].splice(lo,0,null);this.chartData[si.idx][lo]=pt.v;}}
             total++;}}
-        this.log(`History: ${source} q=${resp.quality}`,'push');
+        const info=resp.quality?` q=${resp.quality}`:(resp.downsampled?` downsampled ${resp.totalPoints}→${resp.returnedPoints}`:'');
+        this.log(`History: ${source}${info}`,'push');
       }catch(e){this.log(`History ${source}: ${e.message}`,'error');}}
     while(this.chartData[0].length>CHART_MAX){this.chartData[0].shift();for(let i=1;i<this.chartData.length;i++)this.chartData[i].shift();}
     this.log(`Loaded ${total} history points`,'push');this.chart.setData(this.chartData,false);
@@ -557,7 +754,7 @@ class BridgeTab {
 const B = {
   dp: new BridgeTab('dp',{chart:false, srcSels:['dp-cmd-src','dp-rw-src','dp-sc-src','dp-ack-src']}),
   ds: new BridgeTab('ds',{chart:true,  srcSels:['ds-cmd-src','ds-rw-src','ds-sc-src','ds-ack-src','ds-q-src','ds-exp-src']}),
-  dv: new BridgeTab('dv',{chart:true,  srcSels:['dv-cmd-src','dv-sc-src','dv-ack-src','dv-q-src','dv-exp-src']}),
+  dv: new BridgeTab('dv',{chart:true,  srcSels:['dv-cmd-src','dv-rw-src','dv-sc-src','dv-ack-src','dv-q-src','dv-exp-src','dv-compact-src','dv-arch-src','dv-archrange-src']}),
 };
 
 // Init URLs

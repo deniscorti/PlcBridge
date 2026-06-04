@@ -7,6 +7,8 @@ using Bridge.Core.Buffer;
 using Bridge.Core.Model;
 using Bridge.Core.Services;
 using Bridge.InterBridge.WsClient;
+using Bridge.Storage;
+using Bridge.Storage.Parquet;
 
 namespace Bridge.Host.WebSockets;
 
@@ -21,7 +23,8 @@ public static class WsHandler
     public static IEndpointRouteBuilder MapBridgeWebSocket(this IEndpointRouteBuilder app, string path)
     {
         app.Map(path, async (HttpContext ctx, WsConnectionManager connMgr, ISubscriptionBroker broker,
-            SourceManager srcMgr, BufferManager? bufMgr, CompactLayoutManager layoutMgr) =>
+            SourceManager srcMgr, BufferManager? bufMgr, CompactLayoutManager layoutMgr,
+            ParquetStorage? parquetStorage) =>
         {
             if (!ctx.WebSockets.IsWebSocketRequest)
             {
@@ -34,7 +37,7 @@ public static class WsHandler
 
             try
             {
-                await HandleConnectionAsync(socket, connId, connMgr, broker, srcMgr, bufMgr, layoutMgr, ctx.RequestAborted);
+                await HandleConnectionAsync(socket, connId, connMgr, broker, srcMgr, bufMgr, layoutMgr, parquetStorage, ctx.RequestAborted);
             }
             finally
             {
@@ -50,7 +53,7 @@ public static class WsHandler
     private static async Task HandleConnectionAsync(
         WebSocket socket, string connId, WsConnectionManager connMgr,
         ISubscriptionBroker broker, SourceManager srcMgr, BufferManager? bufMgr,
-        CompactLayoutManager layoutMgr, CancellationToken ct)
+        CompactLayoutManager layoutMgr, ParquetStorage? parquetStorage, CancellationToken ct)
     {
         var buffer = new byte[8192];
         while (socket.State == WebSocketState.Open && !ct.IsCancellationRequested)
@@ -71,14 +74,14 @@ public static class WsHandler
             if (result.MessageType != WebSocketMessageType.Text) continue;
 
             var json = Encoding.UTF8.GetString(ms.ToArray());
-            await ProcessMessageAsync(json, connId, connMgr, broker, srcMgr, bufMgr, layoutMgr, ct);
+            await ProcessMessageAsync(json, connId, connMgr, broker, srcMgr, bufMgr, layoutMgr, parquetStorage, ct);
         }
     }
 
     private static async Task ProcessMessageAsync(
         string json, string connId, WsConnectionManager connMgr,
         ISubscriptionBroker broker, SourceManager srcMgr, BufferManager? bufMgr,
-        CompactLayoutManager layoutMgr, CancellationToken ct)
+        CompactLayoutManager layoutMgr, ParquetStorage? parquetStorage, CancellationToken ct)
     {
         WsClientMessage? msg;
         try
@@ -136,6 +139,10 @@ public static class WsHandler
 
             case WsQueryAlarms qa:
                 HandleQuery(connId, qa.Id, qa.Source, qa.Tags, qa.From, qa.To, qa.Limit, "alarm", bufMgr, connMgr, ct);
+                break;
+
+            case WsLoadChannels lc:
+                _ = HandleLoadChannelsAsync(connId, lc, connMgr, parquetStorage, ct);
                 break;
 
             case WsBridgeCommand bc:
@@ -286,6 +293,79 @@ public static class WsHandler
                 ["truncated"] = data.Count >= limit
             }
         }, ct);
+    }
+
+    private static async Task HandleLoadChannelsAsync(string connId, WsLoadChannels lc,
+        WsConnectionManager connMgr, ParquetStorage? storage, CancellationToken ct)
+    {
+        try
+        {
+            if (storage?.HistoricalPath is null)
+            {
+                await connMgr.SendAsync(connId, new WsError { Id = lc.Id, Code = "NOT_AVAILABLE", Message = "Historical path not configured." }, ct);
+                return;
+            }
+
+            var from = DateTimeOffset.Parse(lc.From);
+            var to = DateTimeOffset.Parse(lc.To);
+
+            var files = storage.ListHistoricalFiles(lc.Source, DataKind.Telemetry, from, to);
+            if (files.Count == 0)
+            {
+                await connMgr.SendAsync(connId, new WsResponse
+                {
+                    Id = lc.Id, Ok = true,
+                    Extra = new Dictionary<string, object?>
+                    {
+                        ["source"] = lc.Source, ["totalPoints"] = 0, ["returnedPoints"] = 0,
+                        ["downsampled"] = false, ["data"] = Array.Empty<object>()
+                    }
+                }, ct);
+                return;
+            }
+
+            var allValues = new List<TagValue>();
+            foreach (var f in files)
+            {
+                var values = await ParquetStorage.ReadFileAsync(f.FullPath, lc.Tags, from, to);
+                allValues.AddRange(values);
+            }
+
+            var totalPoints = allValues.Count;
+            if (lc.Resolution is > 0)
+                allValues = Downsampler.MinMaxBucketMultiTag(allValues, lc.Resolution.Value);
+
+            var grouped = allValues
+                .GroupBy(v => v.Tag)
+                .Select(g => new
+                {
+                    tag = g.Key,
+                    rawCount = totalPoints,
+                    values = g.OrderBy(v => v.Timestamp).Select(v => new { v = v.Value, ts = v.Timestamp, msgId = v.MsgId }).ToList()
+                }).ToList();
+
+            var returnedPoints = grouped.Sum(g => g.values.Count);
+
+            await connMgr.SendAsync(connId, new WsResponse
+            {
+                Id = lc.Id, Ok = true,
+                Extra = new Dictionary<string, object?>
+                {
+                    ["source"] = lc.Source,
+                    ["from"] = lc.From,
+                    ["to"] = lc.To,
+                    ["totalPoints"] = totalPoints,
+                    ["returnedPoints"] = returnedPoints,
+                    ["downsampled"] = lc.Resolution.HasValue && totalPoints > returnedPoints,
+                    ["resolution"] = lc.Resolution,
+                    ["data"] = grouped
+                }
+            }, ct);
+        }
+        catch (Exception ex)
+        {
+            await connMgr.SendAsync(connId, new WsError { Id = lc.Id, Code = "LOAD_ERROR", Message = ex.Message }, ct);
+        }
     }
 
     private static async Task HandleBridgeCommandAsync(string connId, WsBridgeCommand bc,

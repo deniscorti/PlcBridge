@@ -14,7 +14,7 @@
 // ──────────────────────────────────────────────────────────
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddHttpClient("proxy", c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHttpClient("proxy", c => c.Timeout = TimeSpan.FromMinutes(5));
 var app = builder.Build();
 
 var bridgeUrl = args.SkipWhile(a => a != "--bridge").Skip(1).FirstOrDefault() ?? "http://localhost:5080";

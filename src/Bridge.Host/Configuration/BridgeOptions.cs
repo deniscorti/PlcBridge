@@ -104,6 +104,10 @@ public sealed class BufferOptions
     /// <summary>Alias per ParquetArchivePath (retrocompatibilità).</summary>
     public string ArchivePath { get => ParquetArchivePath; set => ParquetArchivePath = value; }
 
+    /// <summary>Cartella dove il DataServer trova file Parquet storici per analisi offline.
+    /// I file vengono letti su richiesta via loadChannels senza caricarli nel ring buffer.</summary>
+    public string? HistoricalDataPath { get; set; }
+
     public string FileFormat { get; set; } = "Parquet";
 }
 
